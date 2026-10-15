@@ -1,0 +1,31 @@
+---
+import { getCollection } from 'astro:content';
+
+const features = (await getCollection('features')).sort((a, b) => a.data.order - b.data.order);
+---
+
+<section class="section" id="features">
+  <div class="wrap">
+    <h2>Features</h2>
+    <ul class="features">
+      {features.map(({ data }) => (
+        <li class="feature">
+          <h3>{data.title}</h3>
+          <p>{data.description}</p>
+        </li>
+      ))}
+    </ul>
+  </div>
+</section>
+
+<style>
+  .features {
+    display: grid; gap: 1rem; margin-top: 2rem; padding: 0; list-style: none;
+    grid-template-columns: repeat(auto-fill, minmax(18rem, 1fr));
+  }
+  .feature {
+    padding: 1.5rem; border-radius: var(--radius);
+    background: var(--bg-elevated); border: 1px solid var(--line);
+  }
+  .feature p { margin-top: 0.5rem; color: var(--text-muted); font-size: 1rem; }
+</style>

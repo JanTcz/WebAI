@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>WebAI Editor: edit any website in your browser, no install</title>
+  <!-- Editor proxy URL; empty = sign in with OpenRouter, or a local proxy on :4510. -->
+  <meta name="webai-proxy" content="https://jant.cz/webai/v1">
+  <meta name="description" content="Shift+click any element of a website to open a chat with an AI agent that edits the page right away. Runs entirely in your browser, nothing to install.">
+  <link rel="icon" href="../assets/icon.svg" type="image/svg+xml">
+  <style>
+    * { box-sizing: border-box; margin: 0; }
+    html, body { height: 100%; }
+    body { display: grid; grid-template-rows: auto 1fr; font: 14px/1.4 system-ui, -apple-system, 'Segoe UI', sans-serif; background: #0b0c18; color: #d4d4e6; }
+    .bar { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 1rem; padding: 0.5rem 1rem; border-bottom: 1px solid #2e2f4a; }
+    .bar strong { color: #fff; }
+    .logo { display: inline-flex; align-items: center; gap: 0.4rem; }
+    .bar .hint { color: #9a9ab8; }
+    .bar .actions { display: flex; gap: 0.5rem; margin-left: auto; }
+    .bar button, .bar a { padding: 0.35rem 0.75rem; border: 1px solid #2e2f4a; border-radius: 6px; background: #181a30; color: #d4d4e6; font: inherit; text-decoration: none; cursor: pointer; }
+    .bar button:hover, .bar a:hover { border-color: #7c5cff; color: #fff; }
+    .bar button:disabled { opacity: 0.5; cursor: progress; }
+    .bar button[aria-pressed="true"] { border-color: #7c5cff; background: #2a2160; color: #fff; }
+    kbd { padding: 0.05em 0.4em; border-radius: 4px; background: #181a30; box-shadow: 0 0 0 1px #2e2f4a; color: #fff; }
+    main { display: grid; grid-template-columns: 1fr auto; min-height: 0; }
+    iframe { width: 100%; height: 100%; border: 0; background: #0f1020; }
+    #source { width: min(42vw, 40rem); overflow: auto; border-left: 1px solid #2e2f4a; background: #0b0c18; }
+    #source pre { padding: 1rem; font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; color: #c9c9de; }
+    #status { color: #b8a6ff; }
+    #drop { position: fixed; inset: 0; z-index: 10; display: grid; place-items: center; border: 3px dashed #7c5cff; background: rgb(11 12 24 / 0.85); color: #fff; font-size: 1.25rem; text-align: center; }
+    #drop[hidden] { display: none; }
+    @media (max-width: 50rem) { main { grid-template-columns: 1fr; grid-template-rows: 1fr auto; } #source { width: auto; max-height: 40vh; border-left: 0; border-top: 1px solid #2e2f4a; } }
+  </style>
+</head>
+<body>
+  <div class="bar">
+    <strong class="logo"><img src="../assets/icon.svg" alt="" width="20" height="20"> WebAI Editor</strong>
+    <span class="hint">Edit any website, nothing to install: drop its folder or ZIP here, <kbd>Shift</kbd>+click anything and say what to change, then download the result. Runs entirely in your browser. Free AI models may store prompts, so don't enter personal data.</span>
+    <span id="status" role="status"></span>
+    <div class="actions">
+      <button id="toggle-source" type="button" aria-pressed="false">Source</button>
+      <button id="upload" type="button" disabled title="Files or a ZIP; a ZIP with index.html replaces the whole site">Upload</button>
+      <input id="upload-input" type="file" multiple hidden>
+      <button id="download" type="button" disabled>Download ZIP</button>
+      <button id="reset-site" type="button" disabled>Reset site</button>
+      <a href="https://github.com/JanTcz/WebAI">GitHub</a>
+    </div>
+  </div>
+  <main>
+    <iframe id="site" title="Site being edited"></iframe>
+    <aside id="source" hidden><pre></pre></aside>
+  </main>
+  <div id="drop" hidden>Drop files, a folder or a ZIP.<br>A folder or ZIP with index.html replaces the whole site; anything else is added.</div>
+  <script type="module">
+    import { main } from './editor.js';
+    main().catch((err) => {
+      document.querySelector('#site').srcdoc = `<p style="font:16px system-ui;color:#fff;padding:2rem">The editor failed to start: ${String(err.message).replace(/</g, '&lt;')}</p>`;
+    });
+  </script>
+</body>
+</html>

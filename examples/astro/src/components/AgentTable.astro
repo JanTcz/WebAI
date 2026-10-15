@@ -1,0 +1,38 @@
+---
+import { agents } from '../data/agents';
+---
+
+<section class="section" id="agents">
+  <div class="wrap">
+    <h2>Agents</h2>
+    <p class="section__lede">
+      Installed CLIs are detected when the dev server starts. Switch model and effort in the panel (⚙).
+    </p>
+    <div class="table-wrap">
+      <table class="agents">
+        <thead><tr><th scope="col">CLI</th><th scope="col">Runs</th><th scope="col">Status</th></tr></thead>
+        <tbody>
+          {agents.map((a) => (
+            <tr><th scope="row">{a.name}</th><td><code>{a.command}</code></td><td>{a.note}</td></tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<style>
+  .table-wrap { margin-top: 2rem; overflow-x: auto; }
+  .agents { width: 100%; border-collapse: collapse; font-size: 1rem; }
+  .agents th, .agents td { padding: 0.85rem 1rem; text-align: left; border-bottom: 1px solid var(--line); }
+  .agents thead th { color: var(--text-muted); font-weight: 500; font-size: 0.9rem; }
+  .agents tbody th { color: var(--text); font-weight: 600; white-space: nowrap; }
+  .agents code { color: var(--accent-text); white-space: nowrap; }
+
+  /* On narrow screens each row stacks; the header stays for screen readers only. */
+  @media (max-width: 40rem) {
+    .agents thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+    .agents tr { display: grid; gap: 0.25rem; padding-block: 0.85rem; border-bottom: 1px solid var(--line); }
+    .agents th, .agents td { padding: 0; border: 0; }
+  }
+</style>

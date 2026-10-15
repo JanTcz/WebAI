@@ -1,0 +1,17 @@
+{
+  "name": "webai-example-next",
+  "private": true,
+  "description": "Next.js (App Router) with withWebai() and <WebaiScript />.",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build"
+  },
+  "dependencies": {
+    "next": "*",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@jantcz/webai": "file:../../packages/webai"
+  }
+}

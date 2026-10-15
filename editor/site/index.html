@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>webai | click an element on your site and tell the AI what to change</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="wrap site-header__inner">
+      <a class="brand" href="#"><svg class="brand__mark" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="16" fill="#6a4cf0"/><path d="M14 24v-6a4 4 0 0 1 4-4h6M40 14h6a4 4 0 0 1 4 4v6M50 40v6a4 4 0 0 1-4 4h-6M24 50h-6a4 4 0 0 1-4-4v-6" fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/><path d="M32 20l3.2 8.8L44 32l-8.8 3.2L32 44l-3.2-8.8L20 32l8.8-3.2z" fill="#ffb020"/></svg> webai</a>
+      <nav>
+        <a href="#how">How it works</a>
+        <a href="#features">Features</a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div class="wrap">
+        <p class="eyebrow">WebAI Editor, right in your browser</p>
+        <h1>Click the page. Say what to change.</h1>
+        <p class="lede">
+          Hold <kbd>Shift</kbd> and click any element on this page. A chat opens with an
+          AI agent that knows the exact spot in the source code and edits it right away.
+        </p>
+        <a class="btn" href="#how">How it works</a>
+      </div>
+    </section>
+
+    <section class="section" id="how">
+      <div class="wrap">
+        <h2>How it works</h2>
+        <ol class="steps">
+          <li>
+            <h3>Pick an element</h3>
+            <p>Shift+click a heading, a button or a paragraph. To chat without a selection, use the ✦ button.</p>
+          </li>
+          <li>
+            <h3>Say what you want</h3>
+            <p>For example “shorter heading”, “make the button green” or “add a third card about pricing”.</p>
+          </li>
+          <li>
+            <h3>Watch it change</h3>
+            <p>The agent edits the files and the page reloads by itself. See the code via “Source” at the top.</p>
+          </li>
+        </ol>
+      </div>
+    </section>
+
+    <section class="section" id="features">
+      <div class="wrap">
+        <h2>Features</h2>
+        <ul class="cards">
+          <li class="card">
+            <h3>The exact spot</h3>
+            <p>Every element carries its file, line and column. The agent doesn't guess where things are.</p>
+          </li>
+          <li class="card">
+            <h3>One conversation</h3>
+            <p>It builds on previous messages, so “a little smaller still” just works.</p>
+          </li>
+          <li class="card">
+            <h3>In your project too</h3>
+            <p>In Astro, as an integration for <code>astro dev</code> with Claude Code, Codex, OpenCode or Pi.</p>
+          </li>
+        </ul>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap">
+      <p>webai · the editor runs entirely in your browser, changes stay with you</p>
+    </div>
+  </footer>
+</body>
+</html>

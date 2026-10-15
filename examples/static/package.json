@@ -1,0 +1,12 @@
+{
+  "name": "webai-example-static",
+  "private": true,
+  "type": "module",
+  "description": "A plain HTML site edited with the webai CLI: no build, no framework.",
+  "scripts": {
+    "dev": "webai site --open"
+  },
+  "devDependencies": {
+    "@jantcz/webai": "file:../../packages/webai"
+  }
+}

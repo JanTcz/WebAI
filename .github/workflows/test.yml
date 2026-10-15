@@ -1,0 +1,44 @@
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node: [24, 26]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ matrix.node }}
+      - run: npm ci --prefix examples/astro
+      # The core with 100 % coverage, the editor, the Astro example's build.
+      - run: npm test
+
+  # The Vite plugin adds nothing to a production build.
+  vite-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 26
+      - run: npm ci --prefix examples/vite-react
+      - run: npm run build --prefix examples/vite-react
+      - run: "! grep -rE '__webai|data-webai-src' examples/vite-react/dist"
+
+  # The image builds; it is published on a release tag (docker.yml).
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - run: docker build -f docker/webai.Dockerfile -t webai .
+      - run: docker run --rm webai --help

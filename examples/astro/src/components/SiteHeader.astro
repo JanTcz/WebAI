@@ -1,0 +1,44 @@
+---
+import { site } from '../config/site';
+---
+
+<header class="site-header">
+  <div class="wrap site-header__inner">
+    <a class="site-header__brand" href="/">
+      <img class="site-header__mark" src="/favicon.svg" alt="" width="28" height="28" />{site.name}
+    </a>
+    <nav aria-label="Main">
+      <ul class="site-header__nav">
+        <li><a href="#how-it-works">How it works</a></li>
+        <li><a href="#agents">Agents</a></li>
+        <li><a href="#get-started">Get started</a></li>
+        <li><a href={site.repo}>GitHub</a></li>
+      </ul>
+    </nav>
+  </div>
+</header>
+
+<style>
+  .site-header {
+    position: sticky; top: 0; z-index: 100;
+    background: rgb(15 16 32 / 85%);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--line);
+  }
+  .site-header__inner {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 1.5rem; min-height: 4rem;
+  }
+  .site-header__brand {
+    display: inline-flex; align-items: center; gap: 0.5rem;
+    color: var(--text); font-weight: 700; font-size: 1.25rem; text-decoration: none;
+  }
+  .site-header__nav { display: flex; gap: 1.5rem; padding: 0; list-style: none; font-size: 0.95rem; }
+  .site-header__nav a { color: var(--text-soft); text-decoration: none; }
+  .site-header__nav a:hover { color: var(--text); }
+
+  /* On narrow screens only the repo link stays; the sections follow right below. */
+  @media (max-width: 40rem) {
+    .site-header__nav li:not(:last-child) { display: none; }
+  }
+</style>

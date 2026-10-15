@@ -1,0 +1,36 @@
+---
+const steps = [
+  { title: 'Pick an element', text: 'Shift+click, Alt+click or right-click anything on the page. Or use the floating ✦ button without a selection.' },
+  { title: 'Say what you want', text: 'The agent gets the file, line, selector, text and an HTML snippet. No need to explain where things are.' },
+  { title: 'Watch it change', text: 'The agent edits the source, the dev server reloads the page, and the panel picks up the in-progress reply after the reload.' },
+];
+---
+
+<section class="section" id="how-it-works">
+  <div class="wrap">
+    <h2>How it works</h2>
+    <ol class="steps">
+      {steps.map((s) => (
+        <li class="step">
+          <h3>{s.title}</h3>
+          <p>{s.text}</p>
+        </li>
+      ))}
+    </ol>
+  </div>
+</section>
+
+<style>
+  .steps {
+    display: grid; gap: 1.25rem; margin-top: 2rem; padding: 0; list-style: none;
+    grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+    counter-reset: step;
+  }
+  .step { counter-increment: step; }
+  .step::before {
+    content: counter(step);
+    display: grid; place-items: center; width: 2.25rem; height: 2.25rem; margin-bottom: 1rem;
+    border-radius: 50%; background: var(--accent); color: #fff; font-weight: 600;
+  }
+  .step p { margin-top: 0.5rem; color: var(--text-muted); }
+</style>

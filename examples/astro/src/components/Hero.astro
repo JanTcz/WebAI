@@ -1,0 +1,34 @@
+---
+import HeroArt from './HeroArt.astro';
+import { site } from '../config/site';
+---
+
+<section class="hero">
+  <div class="wrap hero__inner">
+    <div class="hero__copy">
+      <p class="hero__eyebrow">For any dev server: Astro, Vite, Next.js, static HTML</p>
+      <h1>Click your site. Say what to change.</h1>
+      <p class="hero__lede">
+        <kbd>Shift</kbd>+click any element to open a chat with an AI agent. It knows which
+        file and line the element lives on, edits it right away, and the page reloads itself.
+      </p>
+      <div class="hero__actions">
+        <a class="btn" href="#get-started">Get started</a>
+        <a class="btn btn--ghost" href={site.repo}>Source code</a>
+      </div>
+    </div>
+
+    <HeroArt />
+  </div>
+</section>
+
+<style>
+  .hero { padding-block: clamp(3rem, 8vw, 6rem); }
+  .hero__inner { display: grid; gap: clamp(2.5rem, 5vw, 4rem); align-items: center; }
+  @media (min-width: 62rem) {
+    .hero__inner { grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); }
+  }
+  .hero__eyebrow { margin-bottom: 1rem; color: var(--accent-text); font-size: 0.95rem; font-weight: 500; }
+  .hero__lede { margin-top: 1.5rem; max-width: 34rem; font-size: 1.2rem; }
+  .hero__actions { display: flex; flex-wrap: wrap; gap: 0.75rem; margin-top: 2rem; }
+</style>

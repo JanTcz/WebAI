@@ -1,0 +1,6 @@
+body { margin: 0; font: 18px/1.6 system-ui, sans-serif; background: #111; color: #eee; }
+.page { max-width: 42rem; margin: 5rem auto; padding: 0 1.5rem; }
+.eyebrow { text-transform: uppercase; letter-spacing: 0.1em; color: #f5c04a; font-size: 0.8rem; }
+h1 { font-size: 3rem; margin: 0 0 1rem; }
+.lead { color: #bbb; }
+.cta { display: inline-block; margin-top: 1rem; padding: 0.7rem 1.4rem; border-radius: 8px; background: #f5c04a; color: #111; text-decoration: none; font-weight: 600; }

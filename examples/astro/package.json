@@ -1,0 +1,18 @@
+{
+  "name": "webai-example",
+  "private": true,
+  "type": "module",
+  "description": "Example one-page website using webai with Astro.",
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "test": "astro build && node --test test/*.test.js"
+  },
+  "dependencies": {
+    "astro": "^7.2.4"
+  },
+  "devDependencies": {
+    "@jantcz/webai": "file:../../packages/webai"
+  }
+}

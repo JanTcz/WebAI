@@ -1,0 +1,8 @@
+**/node_modules
+**/.webai
+**/dist
+**/.astro
+**/.next
+.git
+deploy
+.playwright-mcp

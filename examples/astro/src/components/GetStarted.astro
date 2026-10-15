@@ -1,0 +1,48 @@
+---
+const cli = `npx @jantcz/webai ./site
+npx @jantcz/webai --target http://localhost:3000`;
+const plugin = `npm i -D @jantcz/webai
+
+// astro.config.mjs
+import webai from '@jantcz/webai/astro';
+integrations: [webai()]
+
+// vite.config.js
+import webai from '@jantcz/webai/vite';
+plugins: [webai()]`;
+const docker = `npm run bridge   # on the host
+npm run docker   # in the container`;
+---
+
+<section class="section" id="get-started">
+  <div class="wrap">
+    <h2>Get started</h2>
+    <div class="start">
+      <div>
+        <h3>Any site, no setup</h3>
+        <pre><code>{cli}</code></pre>
+        <p>A folder of HTML files, or a dev server that is already running: Next.js, Django, Rails, Laravel, Hugo…</p>
+      </div>
+      <div>
+        <h3>Or a plugin</h3>
+        <pre><code>{plugin}</code></pre>
+        <p>Next.js: <code>withWebai()</code> in <code>next.config</code>.</p>
+      </div>
+      <div>
+        <h3>Then <kbd>Shift</kbd>+click</h3>
+        <p>Pick an element, say what to change. For development in Docker:</p>
+        <pre><code>{docker}</code></pre>
+      </div>
+    </div>
+  </div>
+</section>
+
+<style>
+  .start { display: grid; gap: 1.5rem; margin-top: 2rem; grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr)); }
+  .start p { margin-top: 0.5rem; color: var(--text-muted); font-size: 1rem; }
+  pre {
+    margin-top: 0.75rem; padding: 1rem 1.25rem; overflow-x: auto;
+    border-radius: var(--radius); background: var(--bg-elevated); border: 1px solid var(--line);
+    color: var(--text-soft); font-size: 0.85rem; line-height: 1.6;
+  }
+</style>
