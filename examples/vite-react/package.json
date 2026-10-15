@@ -1,0 +1,19 @@
+{
+  "name": "webai-example-vite-react",
+  "private": true,
+  "type": "module",
+  "description": "React on Vite with the webai plugin.",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build"
+  },
+  "dependencies": {
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@jantcz/webai": "file:../../packages/webai",
+    "@vitejs/plugin-react": "*",
+    "vite": "*"
+  }
+}

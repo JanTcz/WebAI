@@ -1,0 +1,17 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import Hero from '../components/Hero.astro';
+import HowItWorks from '../components/HowItWorks.astro';
+import FeatureGrid from '../components/FeatureGrid.astro';
+import AgentTable from '../components/AgentTable.astro';
+import GetStarted from '../components/GetStarted.astro';
+import { site } from '../config/site';
+---
+
+<BaseLayout title={site.title} description={site.description}>
+  <Hero />
+  <HowItWorks />
+  <FeatureGrid />
+  <AgentTable />
+  <GetStarted />
+</BaseLayout>

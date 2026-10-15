@@ -1,0 +1,50 @@
+# Develop the example site in a container. AI agents run on the host via the bridge:
+#   npm run bridge          # on the host, keep it running
+#   docker compose up       # http://localhost:4321, Shift+click an element
+services:
+  web:
+    image: node:26-bookworm-slim
+    working_dir: /workspace/examples/astro
+    # npm ci only when package-lock.json changes; node_modules live in a volume
+    # because the macOS ones have native binaries for a different OS.
+    command:
+      - sh
+      - -c
+      - |
+        sum=$$(sha256sum package-lock.json)
+        [ "$$sum" = "$$(cat node_modules/.lock-sum 2>/dev/null)" ] || { npm ci && echo "$$sum" > node_modules/.lock-sum; }
+        exec npx astro dev --host 0.0.0.0 --port 4321 --ignore-lock
+    ports:
+      - 127.0.0.1:4321:4321
+    volumes:
+      # The whole repo, because of file:../../packages/webai in examples/astro/package.json.
+      - .:/workspace
+      - node_modules:/workspace/examples/astro/node_modules
+    environment:
+      WEBAI_BRIDGE: http://host.docker.internal:4400
+    extra_hosts:
+      # Docker Desktop provides this itself; needed on Linux.
+      - host.docker.internal:host-gateway
+
+  # Agents in a container (Pi, OpenCode). They need no login from the host:
+  # OpenCode has free models without an account, Pi uses an API key from .env.
+  # Their tools see only this repo. They don't start with `up`: webai runs them
+  # one message at a time via `docker compose run`.
+  agents:
+    profiles: [agents]
+    build:
+      context: docker
+      dockerfile: agents.Dockerfile
+    image: webai-agents
+    working_dir: /workspace/examples/astro
+    volumes:
+      - .:/workspace
+      # Home directory: sessions, model catalogs and logins of both CLIs.
+      - agents-home:/root
+    env_file:
+      - path: .env
+        required: false
+
+volumes:
+  node_modules:
+  agents-home:

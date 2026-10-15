@@ -1,0 +1,15 @@
+---
+import { site } from '../config/site';
+---
+
+<footer class="site-footer">
+  <div class="wrap site-footer__inner">
+    <p>{site.name} · click-to-edit with AI agents for any dev server · free for noncommercial use</p>
+    <a href={site.repo}>Source on GitHub</a>
+  </div>
+</footer>
+
+<style>
+  .site-footer { border-top: 1px solid var(--line); padding-block: 2rem; font-size: 0.95rem; color: var(--text-muted); }
+  .site-footer__inner { display: flex; flex-wrap: wrap; gap: 1rem; justify-content: space-between; }
+</style>

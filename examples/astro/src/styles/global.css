@@ -1,0 +1,104 @@
+/* =========================================================================
+   The project's only stylesheet. Colors only via tokens; text contrast is
+   computed against --bg (WCAG AA 4.5:1). --line is a purely decorative
+   separator and carries no information.
+   ========================================================================= */
+
+:root {
+  --bg:          #0F1020;
+  --bg-elevated: #181a30;
+  --text:        #FFFFFF;
+  --text-soft:   #D4D4E6;   /* 12.9:1 */
+  --text-muted:  #9A9AB8;   /*  6.9:1 */
+
+  /* Button fill (white text 5.4:1, darker on hover 6.7:1)
+     and accent as text (6.9:1). */
+  --accent:       #6A4CF0;
+  --accent-hover: #5A3BE0;
+  --accent-text:  #A48BFF;
+
+  --line: #2E2F4A;
+  --glow: rgb(124 92 255 / 35%);
+
+  --font: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --wrap: 72rem;
+  --gutter: clamp(1.25rem, 4vw, 3rem);
+  --section-y: clamp(3.5rem, 8vw, 6.5rem);
+  --radius: 14px;
+
+  --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+* { margin: 0; }
+
+html { scroll-behavior: smooth; scroll-padding-top: 5rem; -webkit-text-size-adjust: 100%; }
+
+body {
+  font-family: var(--font);
+  font-size: 1.125rem;
+  line-height: 1.55;
+  color: var(--text-soft);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+}
+
+img, svg { display: block; max-width: 100%; height: auto; }
+a { color: var(--accent-text); text-underline-offset: 0.2em; }
+a:hover { color: var(--text); }
+code, kbd, pre { font-family: var(--mono); font-size: 0.9em; }
+
+:where(h1, h2, h3) { color: var(--text); text-wrap: balance; }
+h1 { font-size: clamp(2.25rem, 1.4rem + 3vw, 3.75rem); line-height: 1.1; font-weight: 600; letter-spacing: -0.02em; }
+h2 { font-size: clamp(1.625rem, 1.2rem + 1.5vw, 2.25rem); line-height: 1.2; font-weight: 600; letter-spacing: -0.01em; }
+h3 { font-size: 1.125rem; line-height: 1.3; font-weight: 600; }
+
+p { text-wrap: pretty; }
+
+:focus-visible { outline: 3px solid var(--accent-text); outline-offset: 3px; border-radius: 2px; }
+
+.wrap { width: min(100% - var(--gutter) * 2, var(--wrap)); margin-inline: auto; }
+.section { padding-block: var(--section-y); }
+.section + .section { border-top: 1px solid var(--line); }
+.section__lede { margin-top: 0.75rem; max-width: 40rem; color: var(--text-muted); }
+
+.visually-hidden {
+  position: absolute !important; width: 1px; height: 1px;
+  padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap;
+}
+
+.skip-link {
+  position: absolute; left: 1rem; top: -4rem; z-index: 200;
+  padding: 0.75rem 1.25rem; background: var(--accent); color: #fff;
+  border-radius: 0 0 6px 6px; text-decoration: none;
+  transition: top 0.18s var(--ease);
+}
+.skip-link:focus { top: 0; color: #fff; }
+
+.btn {
+  display: inline-flex; align-items: center; gap: 0.5rem;
+  padding: 0.9rem 1.6rem; border-radius: 999px;
+  background: var(--accent); color: #fff;
+  font-size: 1rem; font-weight: 500; line-height: 1; text-decoration: none;
+  transition: background 0.2s var(--ease), transform 0.2s var(--ease);
+}
+.btn:hover { background: var(--accent-hover); color: #fff; transform: translateY(-2px); }
+.btn--ghost { background: transparent; color: var(--text); box-shadow: inset 0 0 0 1px var(--line); }
+.btn--ghost:hover { background: var(--bg-elevated); }
+
+kbd {
+  padding: 0.1em 0.45em; border-radius: 6px;
+  background: var(--bg-elevated); box-shadow: inset 0 -1px 0 var(--line), 0 0 0 1px var(--line);
+  color: var(--text);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

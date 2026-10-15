@@ -1,0 +1,7 @@
+body { margin: 0; font: 18px/1.6 system-ui, sans-serif; color: #2b2118; background: #fdf8f1; }
+.top { display: flex; justify-content: space-between; align-items: center; padding: 1rem 2rem; border-bottom: 1px solid #eadfce; }
+.top nav a { margin-left: 1rem; color: inherit; }
+main { max-width: 40rem; margin: 4rem auto; padding: 0 2rem; }
+h1 { font-size: 2.6rem; line-height: 1.1; margin: 0 0 1rem; }
+.lead { font-size: 1.2rem; color: #6b5a48; }
+.button { display: inline-block; margin-top: 1rem; padding: 0.7rem 1.4rem; border-radius: 999px; background: #b45309; color: #fff; text-decoration: none; }

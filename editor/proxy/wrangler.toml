@@ -1,0 +1,15 @@
+name = "webai-demo-proxy"
+main = "worker.js"
+compatibility_date = "2026-10-01"
+
+[vars]
+# Origins the editor may call from (Pages and local `npm run editor`).
+ALLOWED_ORIGINS = "https://jantcz.github.io,http://localhost:4500,http://127.0.0.1:4500"
+
+# Reliable per-IP rate limit across Worker instances.
+[[ratelimits]]
+name = "RATE_LIMITER"
+namespace_id = "1001"
+  [ratelimits.simple]
+  limit = 20
+  period = 60
