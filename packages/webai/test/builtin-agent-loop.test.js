@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { after, before, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { runAgent } from '../bin/webai-agent.js';
+import { RETRY_AFTER_MAX_S, retryAfter, runAgent } from '../bin/webai-agent.js';
 
 const AGENT = fileURLToPath(new URL('../bin/webai-agent.js', import.meta.url));
 
@@ -26,7 +26,7 @@ const server = http.createServer((req, res) => {
     }
     requests.push({ url, headers: req.headers, body: body ? JSON.parse(body) : null });
     const next = script.length > 1 ? script.shift() : script[0];
-    res.writeHead(next.status ?? 200, { 'Content-Type': 'application/json' });
+    res.writeHead(next.status ?? 200, { 'Content-Type': 'application/json', ...next.headers });
     res.end(next.raw ?? JSON.stringify(next.body));
   });
 });
@@ -225,6 +225,40 @@ test('fallbacks on busy models, errors otherwise', async () => {
   // a busy 429 that is the only model: error shown
   r = await run(std(), { steps: [{ status: 429, body: { error: { message: 'overloaded' } } }] });
   assert.match(r.events.at(-1).error, /429/);
+  // any 429 moves on to the next model, not only an "upstream" one
+  r = await run(std(['--fallbacks', 'm2']), { steps: [{ status: 429, body: { error: { message: 'slow' } } }, reply('from m2')] });
+  assert.equal(requests.at(-1).body.model, 'm2');
+  assert.equal(r.events.at(-1).ok, true);
+});
+
+test('Retry-After: a short wait retries the same model once, a long one moves on', async () => {
+  // asks for 0 s: the same model again, and it answers
+  let r = await run(std(['--fallbacks', 'm2']), { steps: [{ status: 429, headers: { 'Retry-After': '0' }, body: {} }, reply('same model')] });
+  assert.deepEqual(requests.slice(-2).map((q) => q.body.model), ['m1', 'm1']);
+  assert.equal(r.events.filter((e) => e.type === 'status').length, 0, 'no switch announced');
+  // still busy after the wait: the next model
+  r = await run(std(['--fallbacks', 'm2']), {
+    steps: [{ status: 503, headers: { 'Retry-After': '0' }, body: {} }, { status: 503, body: {} }, reply('from m2')],
+  });
+  assert.deepEqual(requests.slice(-3).map((q) => q.body.model), ['m1', 'm1', 'm2']);
+  // longer than RETRY_AFTER_MAX_S: no wait, straight to the next model
+  r = await run(std(['--fallbacks', 'm2']), { steps: [{ status: 429, headers: { 'Retry-After': '120' }, body: {} }, reply('from m2')] });
+  assert.deepEqual(requests.slice(-2).map((q) => q.body.model), ['m1', 'm2']);
+  // a 500 is not retried in place even with the header
+  r = await run(std(['--fallbacks', 'm2']), { steps: [{ status: 500, headers: { 'Retry-After': '0' }, body: {} }, reply('from m2')] });
+  assert.deepEqual(requests.slice(-2).map((q) => q.body.model), ['m1', 'm2']);
+  assert.equal(r.events.at(-1).ok, true);
+});
+
+test('retryAfter: seconds, an HTTP date, nothing usable', () => {
+  assert.equal(retryAfter('3'), 3);
+  assert.equal(retryAfter(' 1.5 '), 1.5);
+  assert.equal(retryAfter(new Date(10_000).toUTCString(), 7_000), 3);
+  assert.equal(retryAfter(new Date(1_000).toUTCString(), 7_000), 0, 'a date in the past: no wait');
+  assert.equal(retryAfter('soon'), null);
+  assert.equal(retryAfter(null), null);
+  assert.equal(retryAfter(''), null);
+  assert.equal(RETRY_AFTER_MAX_S, 5);
 });
 
 test('--resume repairs an interrupted tool call and continues the stored conversation', async () => {

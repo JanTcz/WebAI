@@ -295,7 +295,7 @@ async function main(opts, env, readPrompt) {
     for (const candidate of candidates) {
       if (candidate !== model) out({ type: 'status', text: `${model} is busy, switching to ${candidate}…` });
       model = candidate;
-      const res = await fetch(`${baseUrl}/chat/completions`, {
+      const request = () => fetch(`${baseUrl}/chat/completions`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...(key ? { Authorization: `Bearer ${key}` } : {}), 'X-Title': 'webai' },
         body: JSON.stringify({
@@ -306,13 +306,21 @@ async function main(opts, env, readPrompt) {
           ...(baseUrl.includes('openrouter.ai') ? { usage: { include: true } } : {}),
         }),
       });
+      let res = await request();
+      // A short wait the provider asks for is cheaper than a weaker model: once, then move on.
+      const wait = res.status === 429 || res.status === 503 ? retryAfter(res.headers.get('retry-after')) : null;
+      if (wait !== null && wait <= RETRY_AFTER_MAX_S) {
+        await new Promise((resolve) => setTimeout(resolve, wait * 1000));
+        res = await request();
+      }
       const data = await res.json().catch(() => ({}));
       msg = res.ok ? data.choices?.[0]?.message : null;
       if (msg) {
         costUsd += data.usage?.cost ?? 0;
         break;
       }
-      const busy = res.status >= 500 || (res.status === 429 && /upstream|overload|temporarily/i.test(JSON.stringify(data)));
+      // A rate limit or a server error: the next free model may well be free.
+      const busy = res.status >= 500 || res.status === 429;
       if (!res.ok && !busy) throw new Error(apiError(res.status, data));
       if (candidate === candidates.at(-1)) throw new Error(res.ok ? 'The model returned no response.' : apiError(res.status, data));
     }
@@ -329,6 +337,16 @@ async function main(opts, env, readPrompt) {
   }
   save();
   out({ type: 'done', ok: false, error: `The agent didn't finish within ${MAX_STEPS} steps.`, costUsd });
+}
+
+/** Longest wait a rate-limited model may ask for before the agent moves on to the next one. */
+export const RETRY_AFTER_MAX_S = 5;
+
+/** Seconds a 429/503 asks to wait (`Retry-After`: seconds or an HTTP date); `null` when it says nothing usable. */
+export function retryAfter(header, now = Date.now()) {
+  if (!header) return null;
+  const seconds = /^\d+(\.\d+)?$/.test(header.trim()) ? Number(header) : (Date.parse(header) - now) / 1000;
+  return Number.isNaN(seconds) ? null : Math.max(0, seconds);
 }
 
 /** One turn. Injectable for tests: argv, working folder, environment, prompt reader and event writer. */

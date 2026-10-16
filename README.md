@@ -320,7 +320,8 @@ Openverse; no shell, and no access outside the project, to `.env*`,
 `node_modules`, `.git` or `dist`.
 
 - **Kilo Gateway** (default): free models without a key; when one is busy, the
-  next takes over.
+  next takes over. A rate limit that asks for a short wait (`Retry-After` up to
+  5 s) gets it first, on the same model.
 - **OpenRouter**: set `OPENROUTER_API_KEY` (or `WEBAI_API_KEY`) where the dev
   server (or the CLI) runs. Keys never go into the project's files.
 - **Custom**: any OpenAI-compatible endpoint, e.g. `http://localhost:11434/v1`
