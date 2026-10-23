@@ -7,6 +7,7 @@
 
 const STORE_OPEN = 'webai:open';
 const STORE_TARGET = 'webai:target';
+const STORE_DRAFT = 'webai:draft';
 const STORE_SIDE = 'webai:side';
 const STORE_GEOMETRY = 'webai:geometry';
 const MIN_W = 300;
@@ -76,6 +77,12 @@ class Overlay {
     this.unsubscribe = null;
     this.mount();
     this.bindInspector();
+    // A reload after an edit must not eat what is being typed.
+    this.el.input.value = sessionStorage.getItem(STORE_DRAFT) ?? '';
+    this.el.input.addEventListener('input', () => {
+      if (this.el.input.value) sessionStorage.setItem(STORE_DRAFT, this.el.input.value);
+      else sessionStorage.removeItem(STORE_DRAFT);
+    });
     if (sessionStorage.getItem(STORE_OPEN) === '1') {
       const saved = readJson(sessionStorage.getItem(STORE_TARGET));
       if (saved) this.setTarget(saved, findElement(saved, cfg.srcAttr));
@@ -528,6 +535,7 @@ class Overlay {
         page: { url: location.pathname + location.search, title: document.title },
       });
       this.el.input.value = '';
+      sessionStorage.removeItem(STORE_DRAFT);
     } catch (err) {
       this.setBusy(false);
       this.line('error', err.message);
