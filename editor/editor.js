@@ -517,7 +517,7 @@ class Harness {
   /** Starts loading the chosen provider's model list; resolves when it's there (or isn't available). */
   loadModels() {
     // Without a key the proxy serves only free models; a local endpoint has no prices.
-    return loadModels(this.baseUrl, { key: this.settings.apiKey?.trim(), freeOnly: this.provider.keyless && !!this.provider.fallbacks });
+    return loadModels(this.baseUrl, { key: this.provider.keyless ? undefined : this.settings.apiKey?.trim(), freeOnly: this.provider.keyless && !!this.provider.fallbacks });
   }
 
   /** A select of the provider's models when it lists them, otherwise a text field for the model ID. */
@@ -562,7 +562,8 @@ class Harness {
     // The preview's URL (…/preview/pages/about.html) would send the model looking for that path: give it the file.
     if (page?.url?.includes('/preview/')) page = { ...page, url: decodeURI(page.url.split('/preview/').pop().split(/[?#]/)[0]) || 'index.html' };
     const p = this.provider;
-    const key = this.settings.apiKey?.trim();
+    // A keyless provider has no key field: a key saved for OpenRouter must not leak to it (the proxy's CORS rejects Authorization).
+    const key = p.keyless ? undefined : this.settings.apiKey?.trim();
     if (!p.keyless && !key) {
       throw new Error('Sign in with OpenRouter in ⚙ (a free account, free models), or set a custom endpoint such as a local Ollama there.');
     }
