@@ -31,7 +31,8 @@ export async function startBridge({ root, port = DEFAULT_PORT, host = '127.0.0.1
     ...options,
     // A custom command from the browser would mean an arbitrary command on the host.
     custom: { editable: false, ...options.custom },
-    claude: { projectSettings: false, ...options.claude },
+    // No questions answered from the browser either: the container could approve its own Bash.
+    claude: { projectSettings: false, interactive: false, ...options.claude },
   });
   const session = new AgentSession({ root, agents, stateDir, logger });
   await session.detect();

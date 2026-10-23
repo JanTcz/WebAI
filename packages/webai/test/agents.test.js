@@ -15,12 +15,31 @@ import { AgentSession } from '../src/session.js';
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'webai-'));
 
-test('claude: without an allowed shell it offers no Bash and loads the skill pack', () => {
-  const { args } = claudeAgent().command({ sessionId: 'x', resume: false, systemPrompt: 's' });
-  assert.deepEqual(args.slice(args.indexOf('--disallowedTools'), args.indexOf('--disallowedTools') + 2), ['--disallowedTools', 'Bash']);
-  assert.ok(args.includes('--plugin-dir'));
-  const allowed = claudeAgent({ allowedTools: ['Bash(npm run check)'] }).command({ sessionId: 'x', resume: true, systemPrompt: 's' });
+test('claude: asks in the panel by default, so Bash is offered; non-interactive offers no Bash unless allowed', () => {
+  const c = claudeAgent().command({ sessionId: 'x', resume: false, systemPrompt: 's' });
+  assert.ok(c.interactive);
+  assert.deepEqual(c.args.slice(c.args.indexOf('--input-format'), c.args.indexOf('--input-format') + 2), ['--input-format', 'stream-json']);
+  assert.deepEqual(c.args.slice(c.args.indexOf('--permission-prompt-tool'), c.args.indexOf('--permission-prompt-tool') + 2), ['--permission-prompt-tool', 'stdio']);
+  assert.ok(!c.args.includes('--disallowedTools'));
+  assert.ok(c.args.includes('--plugin-dir'));
+  assert.deepEqual(JSON.parse(c.input('hello')), { type: 'user', message: { role: 'user', content: 'hello' } });
+
+  const off = claudeAgent({ interactive: false }).command({ sessionId: 'x', resume: false, systemPrompt: 's' });
+  assert.ok(!off.interactive && !off.args.includes('--permission-prompt-tool') && !off.args.includes('--input-format'));
+  assert.deepEqual(off.args.slice(off.args.indexOf('--disallowedTools'), off.args.indexOf('--disallowedTools') + 2), ['--disallowedTools', 'Bash']);
+  const allowed = claudeAgent({ interactive: false, allowedTools: ['Bash(npm run check)'] }).command({ sessionId: 'x', resume: true, systemPrompt: 's' });
   assert.ok(!allowed.args.includes('--disallowedTools'));
+});
+
+test('claude: a permission request becomes an event, the answer is a control_response', () => {
+  const a = claudeAgent();
+  const request = { type: 'control_request', request_id: 'R1', request: { subtype: 'can_use_tool', tool_name: 'Bash', input: { command: 'npm install gsap' } } };
+  assert.deepEqual(a.parse(request, { root: '/p' }), [{ type: 'permission', id: 'R1', name: 'Bash', summary: 'npm install gsap', input: { command: 'npm install gsap' } }]);
+  assert.deepEqual(a.parse({ type: 'control_request', request_id: 'R2', request: { subtype: 'other' } }, { root: '/p' }), []);
+  assert.deepEqual(a.parse({ type: 'control_cancel_request', request_id: 'R1' }, { root: '/p' }), [{ type: 'permission-answer', id: 'R1', allow: false, cancelled: true }]);
+  const allow = JSON.parse(a.answer({ requestId: 'R1', input: { command: 'x' } }, true));
+  assert.deepEqual(allow, { type: 'control_response', response: { subtype: 'success', request_id: 'R1', response: { behavior: 'allow', updatedInput: { command: 'x' } } } });
+  assert.equal(JSON.parse(a.answer({ requestId: 'R1', input: {} }, false)).response.response.behavior, 'deny');
 });
 
 test('codex: first message without an ID, later ones via exec resume', () => {

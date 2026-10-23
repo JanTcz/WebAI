@@ -24,3 +24,18 @@ test('bridge subcommand without port or folder: default port 4400, current folde
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('bridge: Claude is not interactive, the container must not be able to approve its own tools', async () => {
+  const { startBridge } = await import('../src/bridge.js');
+  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'webai-bridge-')));
+  const logger = { info() {}, warn() {}, error() {} };
+  const bridge = await startBridge({ root: dir, port: 0, logger });
+  try {
+    const c = bridge.session.agents.claude.command({ sessionId: 'x', resume: false, systemPrompt: 's' });
+    assert.ok(!c.interactive && !c.args.includes('--permission-prompt-tool'));
+    assert.ok(c.args.includes('--disallowedTools'));
+  } finally {
+    bridge.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

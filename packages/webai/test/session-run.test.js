@@ -271,3 +271,55 @@ test('session: an error in the adapter ends the run instead of crashing', async 
   await new Promise((r) => setTimeout(r, 100));
   assert.equal(evs.some((e) => e.type === 'done' && e.ok === false), false);
 });
+
+/** An agent that asks before acting: reads the prompt from stdin, then waits for the answer on the next line. */
+const ASKING = `const rl=require('readline').createInterface({input:process.stdin});let n=0;
+  rl.on('line',(l)=>{ n++;
+    if(n===1){ out({type:'permission',id:'R1',name:'Bash',summary:'npm install gsap',input:{command:'npm install gsap'}}); }
+    else { const a=JSON.parse(l); out({type:'text',text:a.allow?'installed':'not allowed'},{type:'done',ok:true}); rl.close(); }
+  });`;
+const asking = () =>
+  adapter(ASKING, {
+    command: () => ({ ...adapter(ASKING).command(), stdin: true, interactive: true, input: (t) => JSON.stringify({ prompt: t }) + '\n' }),
+    answer: ({ requestId }, allow) => JSON.stringify({ id: requestId, allow }) + '\n',
+  });
+
+test('session: a permission request waits for the answer, the turn continues with it', async () => {
+  for (const allow of [true, false]) {
+    const { s } = make({ fake: asking() });
+    const evs = collect(s);
+    const asked = next(s, 'permission');
+    s.send({ message: 'install it' });
+    const ev = await asked;
+    assert.equal(ev.summary, 'npm install gsap');
+    assert.equal(ev.input, undefined, 'the tool input stays on the server');
+    assert.ok(s.busy, 'the turn waits');
+    s.answerPermission('R1', allow);
+    await settled(s);
+    assert.ok(evs.some((e) => e.type === 'permission-answer' && e.id === 'R1' && e.allow === allow));
+    assert.ok(evs.some((e) => e.type === 'text' && e.text === (allow ? 'installed' : 'not allowed')));
+    assert.equal(s.pending.size, 0);
+    assert.throws(() => s.answerPermission('R1', true), /no longer open/);
+  }
+});
+
+test('session: Stop cancels an open permission request', async () => {
+  const { s } = make({ fake: asking() });
+  const evs = collect(s);
+  const asked = next(s, 'permission');
+  s.send({ message: 'install it' });
+  await asked;
+  s.stop();
+  await settled(s);
+  assert.ok(evs.some((e) => e.type === 'permission-answer' && e.id === 'R1' && e.cancelled));
+  assert.equal(s.pending.size, 0);
+});
+
+test('session: a question left over from a previous run is marked unanswered on load', async () => {
+  const { s, root } = make({ fake: asking() });
+  fs.mkdirSync(path.join(root, '.webai'), { recursive: true });
+  fs.writeFileSync(path.join(root, '.webai/transcript.jsonl'), JSON.stringify({ type: 'permission', id: 'OLD', name: 'Bash', seq: 1, ts: 1 }) + '\n');
+  s.events = [];
+  s.load();
+  assert.ok(s.events.some((e) => e.type === 'permission-answer' && e.id === 'OLD' && e.cancelled));
+});

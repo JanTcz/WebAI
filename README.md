@@ -118,8 +118,8 @@ export default defineConfig({
     webai({
       triggers: ['shift-click'],          // + 'contextmenu' (right click), 'alt-click'
       claude: {
-        permissionMode: 'acceptEdits',    // may edit files, no shell
-        allowedTools: ['Bash(npm run check)'],
+        permissionMode: 'acceptEdits',    // may edit files; shell and other tools ask in the panel
+        allowedTools: ['Bash(npm run check)'],  // allowed without asking
         model: 'claude-sonnet-5-5',
       },
     }),
@@ -413,9 +413,11 @@ The WebAI Editor keeps its versions in the browser's storage.
 agent's answer. The panel reopens from `sessionStorage` and catches up on what
 the agent did meanwhile via SSE.
 
-**Permissions.** Claude runs in `acceptEdits`: it may edit files, no shell.
-Bash isn't offered at all unless allowed in `claude.allowedTools`, so it
-doesn't even try. Codex runs with `--sandbox workspace-write`, Gemini with
+**Permissions.** Claude runs in `acceptEdits`: it may edit files. Anything else
+(Bash, MCP tools) asks in the panel with Allow / Deny, and the turn waits for the
+answer; `claude.allowedTools` lists what is allowed without asking. With
+`claude.interactive: false` (the bridge default) such calls are denied and Bash
+isn't offered unless allowed in `allowedTools`. Codex runs with `--sandbox workspace-write`, Gemini with
 `--approval-mode auto_edit`.
 
 **Security.** The `/__webai/*` endpoints run an agent with write access (and

@@ -11,8 +11,10 @@ import { PACK_DIR } from './pack.js';
  * @param {object} [opts]
  * @param {string} [opts.bin] executable, default `claude`
  * @param {string} [opts.model]
- * @param {string} [opts.permissionMode] default `acceptEdits` – may edit files, not run Bash
- * @param {string[]} [opts.allowedTools] e.g. `['Bash(npm run check)']`
+ * @param {string} [opts.permissionMode] default `acceptEdits` – may edit files; anything else asks in the panel
+ * @param {string[]} [opts.allowedTools] e.g. `['Bash(npm run check)']`, allowed without asking
+ * @param {boolean} [opts.interactive] ask in the panel before a tool that isn't allowed (Bash, MCP, …), default `true`;
+ *   `false` denies such calls and doesn't offer Bash unless `allowedTools` has it
  * @param {boolean} [opts.projectSettings] load `.claude/` and `.mcp.json` from the project, default `true`
  * @param {string[]} [opts.extraArgs]
  */
@@ -40,8 +42,11 @@ export function claudeAgent(opts = {}) {
     },
 
     command({ sessionId, resume, systemPrompt, settings = {} }) {
+      const interactive = opts.interactive !== false;
       const args = [
         '-p',
+        // Interactive: the prompt is a stream-json message and stdin stays open for permission answers.
+        ...(interactive ? ['--input-format', 'stream-json', '--permission-prompt-tool', 'stdio'] : []),
         '--output-format', 'stream-json',
         '--verbose',
         '--include-partial-messages',
@@ -55,21 +60,47 @@ export function claudeAgent(opts = {}) {
       if (settings.effort) args.push('--effort', settings.effort);
       // Rules as separate arguments: a rule itself may contain a comma.
       if (opts.allowedTools?.length) args.push('--allowedTools', ...opts.allowedTools);
-      // Without an allowed shell, don't offer Bash at all: in -p mode every attempt
-      // would be denied and the agent would waste time looking for another way.
-      if (!opts.allowedTools?.some((t) => t.startsWith('Bash'))) args.push('--disallowedTools', 'Bash');
+      // Without a way to ask, don't offer Bash unless it's allowed: every attempt would be
+      // denied and the agent would waste time looking for another way.
+      if (!interactive && !opts.allowedTools?.some((t) => t.startsWith('Bash'))) args.push('--disallowedTools', 'Bash');
       // Skills and subagents from @jantcz/webai/agents (named webai:<skill>).
       if (opts.skills !== false) args.push('--plugin-dir', PACK_DIR);
       // No hooks, permissions or MCP servers from the project (bridge: the container writes to the project too).
       if (opts.projectSettings === false) args.push('--setting-sources', 'user', '--strict-mcp-config');
       args.push(...(opts.extraArgs ?? []));
       // The prompt goes to stdin, not argv: it's often long and contains HTML.
-      return { cmd: bin, args, stdin: true };
+      return {
+        cmd: bin,
+        args,
+        stdin: true,
+        ...(interactive && {
+          // stdin stays open until the turn ends (see session.run): permission answers go through it.
+          interactive: true,
+          input: (text) => line({ type: 'user', message: { role: 'user', content: text } }),
+        }),
+      };
+    },
+
+    /** The answer to a `permission` event, as a line for the agent's stdin. */
+    answer({ requestId, input }, allow) {
+      const response = allow
+        ? { behavior: 'allow', updatedInput: input }
+        : { behavior: 'deny', message: 'The user denied this in the WebAI panel.' };
+      return line({ type: 'control_response', response: { subtype: 'success', request_id: requestId, response } });
     },
 
     /** Converts one stream-json line into UI events. */
     parse(msg, ctx) {
       switch (msg.type) {
+        case 'control_request': {
+          const r = msg.request;
+          if (r?.subtype !== 'can_use_tool') return [];
+          const input = r.input ?? {};
+          return [{ type: 'permission', id: msg.request_id, name: r.tool_name, summary: summarizeTool({ name: r.tool_name, input }, ctx.root), input }];
+        }
+        // The agent gave up on the call (the turn was interrupted): the question is moot.
+        case 'control_cancel_request':
+          return [{ type: 'permission-answer', id: msg.request_id, allow: false, cancelled: true }];
         case 'system':
           return msg.subtype === 'init'
             ? [{ type: 'session', id: msg.session_id }, { type: 'status', text: `${msg.model ?? 'claude'} ready` }]
@@ -127,6 +158,8 @@ export function claudeAgent(opts = {}) {
     },
   };
 }
+
+const line = (msg) => JSON.stringify(msg) + '\n';
 
 function rel(file, root) {
   if (!file) return '';

@@ -6,10 +6,15 @@ export interface ClaudeOptions {
   /** Executable, default `claude`. */
   bin?: string;
   model?: string;
-  /** Default `acceptEdits`: the agent may edit files, but not run shell commands. */
+  /** Default `acceptEdits`: the agent may edit files; anything else (Bash, MCP tools) asks in the panel. */
   permissionMode?: 'default' | 'acceptEdits' | 'plan' | 'bypassPermissions' | (string & {});
-  /** Extra allowed tools, e.g. `['Bash(npm run check)']`. Without a Bash entry, Bash isn't offered to the agent at all. */
+  /** Tools allowed without asking, e.g. `['Bash(npm run check)']`. */
   allowedTools?: string[];
+  /**
+   * Ask in the panel (Allow / Deny) before a tool that isn't allowed. Default `true`, bridge `false`.
+   * `false`: such calls are denied, and Bash isn't offered unless `allowedTools` has an entry for it.
+   */
+  interactive?: boolean;
   /** Load skills and subagents from `@jantcz/webai/agents` (`--plugin-dir`). Default `true`. */
   skills?: boolean;
   /**

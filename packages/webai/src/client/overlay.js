@@ -612,6 +612,38 @@ class Overlay {
       case 'tool-error':
         this.line('tool error', ev.text);
         break;
+      case 'permission': {
+        const div = this.line('permission', '');
+        div.dataset.id = ev.id;
+        const ask = document.createElement('span');
+        ask.textContent = `${ev.name} ${ev.summary ?? ''}`.trim();
+        const allow = document.createElement('button');
+        allow.textContent = 'Allow';
+        const deny = document.createElement('button');
+        deny.textContent = 'Deny';
+        deny.className = 'deny';
+        for (const [button, ok] of [[allow, true], [deny, false]]) {
+          button.onclick = () => {
+            allow.disabled = deny.disabled = true;
+            this.api('POST', '/permission', { id: ev.id, allow: ok }).catch((err) => {
+              allow.disabled = deny.disabled = false;
+              this.line('error', err.message);
+            });
+          };
+        }
+        const label = document.createElement('b');
+        label.textContent = 'Allow this? ';
+        div.append(label, ask, allow, deny);
+        break;
+      }
+      case 'permission-answer': {
+        const div = [...this.el.log.querySelectorAll('.msg.permission')].find((d) => d.dataset.id === ev.id);
+        if (!div) break;
+        div.querySelector('b').textContent = ev.cancelled ? 'Not answered: ' : ev.allow ? 'Allowed: ' : 'Denied: ';
+        div.classList.add(ev.allow ? 'allowed' : 'answered');
+        div.querySelectorAll('button').forEach((b) => b.remove());
+        break;
+      }
       case 'denied':
         this.line('denied', `Denied: ${ev.name} ${ev.summary ?? ''}. Allow it in options.claude.allowedTools.`);
         break;
@@ -871,6 +903,12 @@ button:hover { background: #34344a; }
 .msg.meta { text-align: right; }
 .msg.error, .msg.tool.error { color: #ff7a7a; }
 .msg.denied { color: #ffb020; font-size: 12px; }
+.msg.permission { background: #2a2418; border: 1px solid #5c4a1e; border-radius: 8px; padding: 6px 10px; font-size: 12px; color: #ffd37a; }
+.msg.permission span { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; word-break: break-all; }
+.msg.permission button { margin: 6px 6px 0 0; font: inherit; padding: 2px 12px; border: 0; border-radius: 6px; background: #7c5cff; color: #fff; cursor: pointer; }
+.msg.permission button.deny { background: #3a3a50; }
+.msg.permission button:disabled { opacity: 0.5; cursor: default; }
+.msg.permission.allowed, .msg.permission.answered { background: none; border-color: transparent; padding: 0; color: #8f8fa8; }
 code, pre { font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; }
 .msg code { background: #2d2d40; padding: 0 3px; border-radius: 3px; }
 pre.plain { margin: 0; background: transparent; padding: 0; white-space: pre-wrap; }

@@ -104,6 +104,12 @@ function createApi(session) {
       if (req.method === 'POST' && route === '/settings') {
         return json(res, 200, { settings: session.setSettings(await readJson(req)) });
       }
+      if (req.method === 'POST' && route === '/permission') {
+        const { id, allow } = await readJson(req);
+        if (typeof id !== 'string' || typeof allow !== 'boolean') return json(res, 400, { error: 'id is the request, allow is true or false.' });
+        session.answerPermission(id, allow);
+        return json(res, 200, { ok: true });
+      }
       if (req.method === 'POST' && route === '/stop') return json(res, 200, { stopped: session.stop() });
       if (req.method === 'GET' && route === '/history') return json(res, 200, session.history.list());
       if (req.method === 'POST' && route === '/history/restore') {

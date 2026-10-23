@@ -15,8 +15,11 @@ the data-webai-src attribute). Without a source location, find the element in
 the sources by its text, classes and structure first.
 Make the change directly in the source files, keep the edit minimal and in
 the style of the surrounding code. The page reloads by itself, never start
-a dev server or a build. When done, answer briefly (one or two sentences)
-in the user's language, saying what you changed and where.`;
+a dev server or a build. Don't write code that imports a package which isn't
+installed: install it first, or use something else. If a tool you need is denied
+or missing, say so and never claim something ran that didn't.
+When done, answer briefly (one or two sentences) in the user's language,
+saying what you changed and where.`;
 
 /**
  * Conversations with agents. Each agent (Claude, Codex, …) has its own session;
@@ -37,6 +40,7 @@ export class AgentSession {
     this.seq = 0;
     this.listeners = new Set();
     this.proc = null;
+    this.pending = new Map(); // permission requests waiting for an answer: id -> { input }
     this.available = {}; // name -> version, or null when the CLI is missing
     this.state = { sessions: {} };
     this.settings = { agent: Object.keys(agents)[0] };
@@ -112,6 +116,11 @@ export class AgentSession {
         this.events.push(ev);
         this.seq = Math.max(this.seq, ev.seq);
       } catch {} // truncated line after a crash: skip it, the rest of the history is valid
+    }
+    // A question left over from a previous run can't be answered any more.
+    const answered = new Set(this.events.filter((e) => e.type === 'permission-answer').map((e) => e.id));
+    for (const e of this.events.filter((e) => e.type === 'permission' && !answered.has(e.id))) {
+      this.events.push({ type: 'permission-answer', id: e.id, allow: false, cancelled: true, seq: ++this.seq, ts: Date.now() });
     }
     // The file only grows; on startup trim it to what gets loaded anyway.
     if (lines.length > MAX_EVENTS) fs.writeFileSync(file, this.events.map((ev) => JSON.stringify(ev) + '\n').join(''));
@@ -255,7 +264,7 @@ export class AgentSession {
       this.emit({ type: 'done', ok: false, error: err.message });
       return;
     }
-    const { cmd, args, stdin, promptInArgs, env, cleanup } = spec;
+    const { cmd, args, stdin, promptInArgs, env, cleanup, interactive, input } = spec;
     this.emit({ type: 'status', text: `${agent.label} is working…`, busy: true });
     const ctx = { root: this.root };
 
@@ -303,9 +312,19 @@ export class AgentSession {
           this.saveState();
           continue;
         }
+        if (ev.type === 'permission') {
+          // The tool's input (a whole file for Write) stays here: the answer must echo it back.
+          this.pending.set(ev.id, { input: ev.input });
+          ev = { ...ev, input: undefined };
+        }
+        if (ev.type === 'permission-answer') {
+          if (!this.pending.delete(ev.id)) continue;
+        }
         if (ev.type === 'done') {
           finished = true;
           ev = this.priceTurn(ev, session);
+          // The agent waits for more input on stdin; the turn is over.
+          if (interactive) proc.stdin.end();
         }
         this.emit(ev);
       }
@@ -337,6 +356,7 @@ export class AgentSession {
     proc.on('close', guard((code, signal) => {
       if (!current()) return;
       this.proc = null;
+      this.cancelPending();
       if (!retried && resume && agent.isMissingSession?.(stderr)) {
         // The session disappeared from disk (deleted history, another machine): start a new one.
         Object.assign(session, this.freshSession());
@@ -358,8 +378,26 @@ export class AgentSession {
       }
     }));
 
-    if (stdin) proc.stdin.end(text);
+    // stdin errors (EPIPE after the agent exited) must not crash the dev server.
+    proc.stdin.on('error', () => {});
+    if (interactive) proc.stdin.write(input(text));
+    else if (stdin) proc.stdin.end(text);
     else proc.stdin.end();
+  }
+
+  /** The user's answer to a `permission` event; the agent continues or tries something else. */
+  answerPermission(id, allow) {
+    const request = this.pending.get(id);
+    if (!request || !this.proc) throw Object.assign(new Error('That question is no longer open.'), { status: 404 });
+    this.pending.delete(id);
+    this.proc.stdin.write(this.agent.answer({ requestId: id, input: request.input }, !!allow));
+    this.emit({ type: 'permission-answer', id, allow: !!allow });
+  }
+
+  /** Questions that can't be answered any more (the turn ended, Stop, a new conversation). */
+  cancelPending() {
+    for (const id of this.pending.keys()) this.emit({ type: 'permission-answer', id, allow: false, cancelled: true });
+    this.pending.clear();
   }
 
   /** Once per server run: links the skills the agent looks for in the project. */
@@ -407,6 +445,7 @@ export class AgentSession {
   reset() {
     this.stop();
     this.proc = null; // this discards the exiting process's output (see current() in run)
+    this.pending.clear();
     this.state = { sessions: {} };
     this.saveState();
     this.events = [];
