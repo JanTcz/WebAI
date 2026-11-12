@@ -24,6 +24,9 @@ function stubSession(over = {}) {
       this.sent.push(b);
     },
     setSettings: (s) => ({ got: s }),
+    answerPermission(id, allow) {
+      (this.answers ??= []).push([id, allow]);
+    },
     stop: () => true,
     history: { list: () => [{ index: 0 }] },
     restoreVersion: (i) => ({ restored: i }),
@@ -97,6 +100,11 @@ test('server: API routes with a stub session', async () => {
     assert.equal((await call('POST', '/__webai/reset')).status, 200);
     assert.equal(session.wasReset, true);
     assert.equal((await call('GET', '/__webai/nope')).status, 404);
+
+    assert.equal((await call('POST', '/__webai/permission', { body: '{"id":"R1","allow":"yes"}' })).status, 400);
+    assert.equal((await call('POST', '/__webai/permission', { body: '{"allow":true}' })).status, 400);
+    assert.equal((await call('POST', '/__webai/permission', { body: '{"id":"R1","allow":true}' })).status, 200);
+    assert.deepEqual(session.answers, [['R1', true]]);
 
     assert.equal((await call('POST', '/__webai/send', { body: '{"message":"  "}' })).status, 400);
     assert.equal((await call('POST', '/__webai/send', { body: '{"message":"hi"}' })).status, 202);

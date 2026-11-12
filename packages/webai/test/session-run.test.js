@@ -323,3 +323,38 @@ test('session: a question left over from a previous run is marked unanswered on 
   s.load();
   assert.ok(s.events.some((e) => e.type === 'permission-answer' && e.id === 'OLD' && e.cancelled));
 });
+
+test('session: a permission-answer from the agent closes its question; one nobody asked is dropped', async () => {
+  const script = `out({type:'permission-answer',id:'GHOST',allow:true});
+    out({type:'permission',id:'R2',name:'Bash',summary:'ls'},{type:'permission-answer',id:'R2',allow:false},{type:'done',ok:true});`;
+  const { s } = make({ fake: adapter(script) });
+  const evs = collect(s);
+  s.send({ message: 'go' });
+  await settled(s);
+  const answers = evs.filter((e) => e.type === 'permission-answer');
+  assert.deepEqual(answers.map((e) => e.id), ['R2']);
+  assert.equal(s.pending.size, 0);
+});
+
+test('session: an answered question from a previous run stays answered on load', async () => {
+  const { s, root } = make({ fake: asking() });
+  fs.mkdirSync(path.join(root, '.webai'), { recursive: true });
+  const line = (e) => JSON.stringify(e) + '\n';
+  fs.writeFileSync(
+    path.join(root, '.webai/transcript.jsonl'),
+    line({ type: 'permission', id: 'A', name: 'Bash', seq: 1, ts: 1 }) + line({ type: 'permission-answer', id: 'A', allow: true, seq: 2, ts: 2 }),
+  );
+  s.events = [];
+  s.load();
+  assert.equal(s.events.filter((e) => e.type === 'permission-answer').length, 1);
+});
+
+test('session: a write error on the agent\'s stdin (EPIPE) does not crash the server', async () => {
+  const { s } = make({ fake: asking() });
+  const asked = next(s, 'permission');
+  s.send({ message: 'install it' });
+  await asked;
+  assert.doesNotThrow(() => s.proc.stdin.emit('error', Object.assign(new Error('write EPIPE'), { code: 'EPIPE' })));
+  s.stop();
+  await settled(s);
+});
