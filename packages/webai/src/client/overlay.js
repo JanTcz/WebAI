@@ -20,6 +20,8 @@ const TRIGGERS = [
   ['contextmenu', 'Right click (Shift + right click = native menu)'],
 ];
 
+const PING_MS = 15000; // the server's heartbeat (server.js)
+
 const TOOL_ICONS = { Edit: '✎', MultiEdit: '✎', Write: '✚', Read: '◉', Bash: '$', Grep: '⌕', Glob: '⌕' };
 
 export function start(cfg) {
@@ -33,7 +35,7 @@ export function start(cfg) {
 /**
  * Transport to the dev server. Interface:
  * - `request(method, path, body)` → data; failures throw an Error with a readable message
- * - `subscribe({ onEvent, onReady, onLost })` → unsubscribe function; first
+ * - `subscribe({ onEvent, onReady, onLost, onPing })` → unsubscribe function (`onPing` is optional); first
  *   replays the whole history, then `onReady({ busy })`, then live events
  */
 export function httpTransport(cfg) {
@@ -55,10 +57,11 @@ export function httpTransport(cfg) {
       return data;
     },
 
-    subscribe({ onEvent, onReady, onLost }) {
+    subscribe({ onEvent, onReady, onLost, onPing }) {
       const es = new EventSource(`${cfg.base}/events?token=${cfg.token}`);
       es.onmessage = (m) => onEvent(JSON.parse(m.data));
       es.addEventListener('ready', (m) => onReady(JSON.parse(m.data)));
+      es.addEventListener('ping', () => onPing?.());
       es.onerror = () => {
         if (es.readyState === EventSource.CLOSED) onLost('Lost connection to the dev server. Reload the page.');
       };
@@ -110,6 +113,7 @@ class Overlay {
         </header>
         <div class="settings" hidden></div>
         <div class="log"></div>
+        <div class="activity" hidden></div>
         <div class="target" hidden><code></code><button title="Don't send the element">×</button></div>
         <form>
           <textarea rows="2" placeholder="What should happen to the element? Enter sends, Shift+Enter adds a new line"></textarea>
@@ -122,7 +126,7 @@ class Overlay {
     const $ = (s) => root.querySelector(s);
     this.el = {
       hover: $('.hover'), label: $('.hover .label'), pick: $('.pick'), panel: $('.panel'),
-      agent: $('.agent'), log: $('.log'), target: $('.target'), targetCode: $('.target code'),
+      agent: $('.agent'), log: $('.log'), activity: $('.activity'), target: $('.target'), targetCode: $('.target code'),
       form: $('form'), input: $('textarea'), send: $('.send'), fab: $('.fab'), settings: $('.settings'),
       gear: $('.gear'), hint: $('.hint'),
       versions: $('.versions'), vnum: $('.vnum'), back: $('.back'), fwd: $('.fwd'),
@@ -475,7 +479,8 @@ class Overlay {
     this.el.log.textContent = '';
     this.live = null;
     this.unsubscribe = this.transport.subscribe({
-      onEvent: (ev) => this.handle(ev),
+      onEvent: (ev) => (this.lastEventAt = Date.now(), this.lastPingAt = Date.now(), this.handle(ev)),
+      onPing: () => (this.lastPingAt = Date.now()),
       onReady: ({ busy }) => {
         this.caughtUp = true; // events from here on are new, not the replayed history
         this.setBusy(busy);
@@ -561,7 +566,35 @@ class Overlay {
     this.el.send.classList.toggle('stop', busy);
     this.el.panel.classList.toggle('busy', busy);
     this.el.fab.classList.toggle('busy', busy);
+    this.trackActivity(busy);
     if (this.history) this.showHistory(this.history);
+  }
+
+  // ---------- activity ----------
+
+  /** While the agent works: elapsed time, time since its last output, and whether the connection is alive. */
+  trackActivity(busy) {
+    clearInterval(this.activityTimer);
+    this.el.activity.hidden = !busy;
+    if (!busy) return;
+    this.busySince = Date.now();
+    this.lastTool = null;
+    this.lastEventAt = this.lastPingAt = Date.now();
+    this.activityTimer = setInterval(() => this.drawActivity(), 1000);
+    this.drawActivity();
+  }
+
+  drawActivity() {
+    const now = Date.now();
+    const lost = this.unsubscribe && now - this.lastPingAt > 2.5 * PING_MS;
+    const quiet = now - this.lastEventAt;
+    const parts = [`Working ${duration(now - this.busySince)}`];
+    parts.push(quiet < 3000 ? 'receiving output' : `no output for ${duration(quiet)}`);
+    if (this.lastTool) parts.push(`last: ${this.lastTool}`);
+    this.el.activity.textContent = lost
+      ? 'No sign of life from the dev server for a while: it may have restarted. Reload the page.'
+      : parts.join(' · ') + (quiet > 60000 ? ' (the model or a tool may just be slow; Stop ends it)' : '');
+    this.el.activity.classList.toggle('lost', !!lost);
   }
 
   // ---------- agent events ----------
@@ -608,6 +641,7 @@ class Overlay {
       case 'tool':
         this.live = null;
         this.line('tool', `${TOOL_ICONS[ev.name] ?? '•'} ${ev.name} ${ev.summary ?? ''}`);
+        this.lastTool = `${ev.name} ${ev.summary ?? ''}`.trim().slice(0, 60);
         break;
       case 'tool-error':
         this.line('tool error', ev.text);
@@ -713,6 +747,11 @@ function describe(el, srcAttr) {
     text: (el.innerText ?? el.textContent ?? '').replace(/\s+/g, ' ').trim().slice(0, 200) || undefined,
     html: cleanHtml(el.outerHTML, srcAttr).slice(0, 1500),
   };
+}
+
+function duration(ms) {
+  const s = Math.floor(ms / 1000);
+  return s < 60 ? `${s} s` : `${Math.floor(s / 60)} min ${s % 60} s`;
 }
 
 function findElement(info, srcAttr) {
@@ -855,6 +894,8 @@ const STYLES = `
 }
 .fab:hover { background: #8d71ff; opacity: 1; }
 .fab.left { right: auto; left: 16px; }
+.activity { margin: 0 10px; color: #8f8fa8; font: 11.5px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; }
+.activity.lost { color: #ff7a7a; }
 .fab.busy { animation: pulse 1s infinite; }
 .gear { display: inline-flex; align-items: center; justify-content: center; padding: 3px 6px; }
 .gear svg { width: 18px; height: 18px; }

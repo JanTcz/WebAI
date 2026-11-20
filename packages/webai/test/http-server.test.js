@@ -165,6 +165,7 @@ test('server: SSE events replay, Last-Event-ID, live events, ping and cleanup', 
     assert.equal(a.res.headers['content-type'], 'text/event-stream');
     assert.ok(!a.data.includes('id: 1\n') && a.data.includes('id: 2\n') && a.data.includes('id: 3\n'));
     assert.ok(a.data.includes('"live"') && a.data.includes(': ping'));
+    assert.ok(a.data.includes('event: ping\ndata: {"busy":'), 'a named heartbeat the panel can see');
     const b = await get('/__webai/events', { 'last-event-id': '2' });
     assert.ok(!b.data.includes('id: 2\n') && b.data.includes('id: 3\n'));
     await new Promise((r) => setTimeout(r, 100));

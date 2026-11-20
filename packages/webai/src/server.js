@@ -5,6 +5,8 @@ import path from 'node:path';
 export const BASE = '/__webai';
 export const BRIDGE_TOKEN_FILE = 'bridge-token';
 
+const PING_MS = 15000;
+
 const LOOPBACK = new Set(['localhost', '127.0.0.1', '[::1]']);
 
 /**
@@ -186,7 +188,8 @@ function events(req, res, session, since) {
   for (const ev of session.events) if (ev.seq > since) write(ev);
   res.write(`event: ready\ndata: ${JSON.stringify({ busy: session.busy })}\n\n`);
   const unsubscribe = session.subscribe(write);
-  const ping = setInterval(() => res.write(': ping\n\n'), 20000);
+  // The comment keeps proxies awake; the named event lets the panel see the connection is alive.
+  const ping = setInterval(() => res.write(`: ping\nevent: ping\ndata: ${JSON.stringify({ busy: session.busy })}\n\n`), PING_MS);
   req.on('close', () => {
     clearInterval(ping);
     unsubscribe();
