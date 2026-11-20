@@ -10,8 +10,10 @@ import { BRIDGE_TOKEN_FILE } from '../src/server.js';
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'webai-mcp-'));
 
-test('endpoint: loopbackUrl keeps the port and protocol, always on 127.0.0.1', () => {
-  assert.equal(loopbackUrl('http://localhost:5173'), 'http://127.0.0.1:5173');
+test('endpoint: loopbackUrl keeps a loopback name (IPv6-only servers), anything else becomes 127.0.0.1', () => {
+  assert.equal(loopbackUrl('http://localhost:5173/ui/'), 'http://localhost:5173');
+  assert.equal(loopbackUrl('http://[::1]:5173'), 'http://[::1]:5173');
+  assert.equal(loopbackUrl('http://127.0.0.1:5173'), 'http://127.0.0.1:5173');
   assert.equal(loopbackUrl('https://my.local:3000/x?y'), 'https://127.0.0.1:3000');
 });
 

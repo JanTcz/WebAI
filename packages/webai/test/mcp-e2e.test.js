@@ -87,7 +87,7 @@ test('e2e: the first page that reports in makes the endpoint file; tools read wh
     assert.match((await c.call('webai_console', {})).content[0].text, /No running WebAI found/);
 
     await b.page('page/hello', { tab: 'tab1', url: `http://${b.host}/`, title: 'Home', nav: 1, origin: `http://${b.host}`, viewport: { width: 1200, height: 800 }, visible: true });
-    assert.equal(JSON.parse(fs.readFileSync(file, 'utf8')).url, `http://127.0.0.1:${b.port}`);
+    assert.equal(JSON.parse(fs.readFileSync(file, 'utf8')).url, `http://localhost:${b.port}`); // the page's own name, not a guess
     await stream.wait(/event: ready/);
 
     await b.page('page/selection', { tab: 'tab1', element: { src: 'src/Hero.astro:12:3', selector: 'h1.title', text: 'Hello', html: '<h1>Hello</h1>' }, page: { url: '/', title: 'Home' } });

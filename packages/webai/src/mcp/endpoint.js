@@ -8,10 +8,16 @@ import { BRIDGE_TOKEN_FILE } from '../server.js';
 
 export const MCP_ENDPOINT_FILE = 'mcp.json';
 
-/** The address the tools reach this machine's server on: the page's port, always on loopback. */
+const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);
+
+/**
+ * The address the tools reach this machine's server on. A loopback name stays as the page used it
+ * (a dev server may listen only on IPv6 `::1`, and `localhost` makes fetch try both); any other
+ * name (a LAN host name, a Docker alias) becomes 127.0.0.1 on the page's port.
+ */
 export function loopbackUrl(origin) {
   const url = new URL(origin);
-  url.hostname = '127.0.0.1';
+  if (!LOOPBACK_HOSTS.has(url.hostname)) url.hostname = '127.0.0.1';
   return url.origin;
 }
 
