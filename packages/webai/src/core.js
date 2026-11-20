@@ -6,6 +6,7 @@ import { resolveAgents } from './agents/index.js';
 import { consoleLogger } from './config.js';
 import { injectHtml, SRC_ATTR } from './html.js';
 import { htmlTransformer } from './inject.js';
+import { loopbackUrl, removeEndpoint, writeEndpoint } from './mcp/endpoint.js';
 import { BASE, createMiddleware, createProxyMiddleware, json, pageAllowed, routeOf } from './server.js';
 import { AgentSession, describeAgents } from './session.js';
 
@@ -38,19 +39,31 @@ export function createWebai(options = {}) {
     srcAttr: SRC_ATTR,
     triggers: options.triggers ?? ['shift-click'],
     fab: options.fab ?? true,
+    chat: options.chat ?? true,
     reload: options.reload ?? false,
   };
 
   let session = null;
   let api;
+  // Token for `webai mcp` (a local process, not the page); `mcp: false` turns the tools off.
+  const mcpToken = options.mcp === false || bridge ? null : randomBytes(24).toString('hex');
+  const stateFolder = path.resolve(root, stateDir);
   if (bridge) {
     // Dev server in a container, agents on the host (logins, ~/.claude, skills).
     api = createProxyMiddleware({ token, bridge, root, stateDir, trustProxy });
   } else {
     // "Other" from another machine on the network = arbitrary command on this one: never editable from the panel.
     const agents = resolveAgents(allowRemote ? { ...options, custom: { ...options.custom, editable: false } } : options);
-    session = new AgentSession({ root, agents, stateDir, logger: log });
-    api = createMiddleware(session, token, { allowRemote, trustProxy });
+    // The page's address is only known once a page loads: then `webai mcp` can find us.
+    const onOrigin = (origin) => {
+      try {
+        if (mcpToken) writeEndpoint(stateFolder, { url: loopbackUrl(origin), token: mcpToken });
+      } catch (err) {
+        log.warn(`webai: MCP endpoint not written: ${err.message}`);
+      }
+    };
+    session = new AgentSession({ root, agents, stateDir, logger: log, onOrigin });
+    api = createMiddleware(session, token, { allowRemote, trustProxy, mcpToken });
   }
 
   const boot = `import { start } from '${BASE}/client.js';\nstart(${JSON.stringify(client)});\n`;
@@ -97,6 +110,7 @@ export function createWebai(options = {}) {
     },
     dispose() {
       session?.dispose();
+      if (mcpToken) removeEndpoint(stateFolder, mcpToken);
     },
   };
 }

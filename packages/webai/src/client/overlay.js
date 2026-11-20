@@ -13,6 +13,8 @@ const STORE_GEOMETRY = 'webai:geometry';
 const MIN_W = 300;
 const MIN_H = 320;
 const STORE_TRIGGERS = 'webai:triggers';
+const STORE_TAB = 'webai:tab';
+const STORE_NAV = 'webai:nav';
 
 const TRIGGERS = [
   ['shift-click', 'Shift + click'],
@@ -20,12 +22,16 @@ const TRIGGERS = [
   ['contextmenu', 'Right click (Shift + right click = native menu)'],
 ];
 
+const PING_MS = 15000; // the server's heartbeat (server.js)
+
 const TOOL_ICONS = { Edit: '✎', MultiEdit: '✎', Write: '✚', Read: '◉', Bash: '$', Grep: '⌕', Glob: '⌕' };
 
 export function start(cfg) {
   if (window.__webai) return;
   window.__webai = true;
-  const run = () => new Overlay(cfg);
+  // Right away, not after DOMContentLoaded: the console of the page's own start-up is what matters most.
+  const capture = cfg.transport ? null : installCapture(cfg.base);
+  const run = () => new Overlay(cfg, capture);
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', run, { once: true });
   else run();
 }
@@ -33,7 +39,7 @@ export function start(cfg) {
 /**
  * Transport to the dev server. Interface:
  * - `request(method, path, body)` → data; failures throw an Error with a readable message
- * - `subscribe({ onEvent, onReady, onLost })` → unsubscribe function; first
+ * - `subscribe({ onEvent, onReady, onLost, onPing, onCommand, tab })` → unsubscribe function (`onPing`, `onCommand`, `tab` are optional); first
  *   replays the whole history, then `onReady({ busy })`, then live events
  */
 export function httpTransport(cfg) {
@@ -55,10 +61,12 @@ export function httpTransport(cfg) {
       return data;
     },
 
-    subscribe({ onEvent, onReady, onLost }) {
-      const es = new EventSource(`${cfg.base}/events?token=${cfg.token}`);
+    subscribe({ onEvent, onReady, onLost, onPing, onCommand, tab }) {
+      const es = new EventSource(`${cfg.base}/events?token=${cfg.token}${tab ? `&tab=${encodeURIComponent(tab)}` : ''}`);
+      es.addEventListener('command', (m) => onCommand?.(JSON.parse(m.data)));
       es.onmessage = (m) => onEvent(JSON.parse(m.data));
       es.addEventListener('ready', (m) => onReady(JSON.parse(m.data)));
+      es.addEventListener('ping', () => onPing?.());
       es.onerror = () => {
         if (es.readyState === EventSource.CLOSED) onLost('Lost connection to the dev server. Reload the page.');
       };
@@ -68,7 +76,7 @@ export function httpTransport(cfg) {
 }
 
 class Overlay {
-  constructor(cfg) {
+  constructor(cfg, capture = null) {
     this.cfg = cfg;
     this.transport = cfg.transport ?? httpTransport(cfg);
     this.target = null;
@@ -83,11 +91,19 @@ class Overlay {
       if (this.el.input.value) sessionStorage.setItem(STORE_DRAFT, this.el.input.value);
       else sessionStorage.removeItem(STORE_DRAFT);
     });
-    if (sessionStorage.getItem(STORE_OPEN) === '1') {
+    // Over HTTP the page also reports to the server (for MCP tools), so the connection is always on.
+    // Before the panel opens: it would otherwise connect without the tab.
+    if (capture) this.startLink(capture);
+    const open = sessionStorage.getItem(STORE_OPEN) === '1';
+    // Without the chat there is no panel to remember the selection by: it is restored on its own.
+    if (open || cfg.chat === false) {
       const saved = readJson(sessionStorage.getItem(STORE_TARGET));
       if (saved) this.setTarget(saved, findElement(saved, cfg.srcAttr));
-      this.open();
     }
+    if (open) this.open();
+    this.watchTarget();
+    // No selection came back from the last page load: tell the server (a stale one would otherwise stay).
+    if (capture && !this.target) this.reportSelection();
   }
 
   // ---------- DOM ----------
@@ -110,6 +126,7 @@ class Overlay {
         </header>
         <div class="settings" hidden></div>
         <div class="log"></div>
+        <div class="activity" hidden></div>
         <div class="target" hidden><code></code><button title="Don't send the element">×</button></div>
         <form>
           <textarea rows="2" placeholder="What should happen to the element? Enter sends, Shift+Enter adds a new line"></textarea>
@@ -122,7 +139,7 @@ class Overlay {
     const $ = (s) => root.querySelector(s);
     this.el = {
       hover: $('.hover'), label: $('.hover .label'), pick: $('.pick'), panel: $('.panel'),
-      agent: $('.agent'), log: $('.log'), target: $('.target'), targetCode: $('.target code'),
+      agent: $('.agent'), log: $('.log'), activity: $('.activity'), target: $('.target'), targetCode: $('.target code'),
       form: $('form'), input: $('textarea'), send: $('.send'), fab: $('.fab'), settings: $('.settings'),
       gear: $('.gear'), hint: $('.hint'),
       versions: $('.versions'), vnum: $('.vnum'), back: $('.back'), fwd: $('.fwd'),
@@ -198,6 +215,7 @@ class Overlay {
     }, true);
     addEventListener('keydown', (e) => {
       if (e.key === 'Escape' && !this.el.panel.hidden) this.close();
+      else if (e.key === 'Escape' && this.cfg.chat === false && this.target) this.setTarget(null); // clears the selection
     });
   }
 
@@ -222,8 +240,29 @@ class Overlay {
     this.hideHover();
     getSelection()?.removeAllRanges(); // Shift+click extends the text selection
     this.setTarget(describe(el, this.cfg.srcAttr), el);
+    if (this.cfg.chat === false) return; // select only: the highlight stays, MCP tools can read it
     this.open();
     this.el.input.focus();
+  }
+
+  /**
+   * The selection survives a reload, but the page may draw the element later (an app that renders after its data
+   * arrives), replace it, or change it (hot reload): after the page settles, look for it again when it is missing and
+   * describe it again when it changed, so the server and the agent are told what is there now.
+   */
+  watchTarget() {
+    let timer = null;
+    new MutationObserver(() => {
+      if (timer || !this.target) return;
+      timer = setTimeout(() => {
+        timer = null;
+        if (!this.target) return;
+        const el = this.targetEl?.isConnected ? this.targetEl : findElement(this.target, this.cfg.srcAttr);
+        if (!el) return;
+        const info = describe(el, this.cfg.srcAttr);
+        if (el !== this.targetEl || JSON.stringify(info) !== JSON.stringify(this.target)) this.setTarget(info, el);
+      }, 300);
+    }).observe(document.documentElement, { childList: true, subtree: true, characterData: true, attributes: true });
   }
 
   setTarget(info, el = null) {
@@ -234,11 +273,12 @@ class Overlay {
     this.el.target.hidden = !info;
     if (info) this.el.targetCode.textContent = `<${info.tag.match(/^<?([\w-]+)/)?.[1] ?? '?'}>  ${info.src ?? info.selector}`;
     this.drawPick();
+    this.reportSelection();
   }
 
   drawPick() {
     const el = this.targetEl;
-    if (!el || !el.isConnected || this.el.panel.hidden) {
+    if (!el || !el.isConnected || (this.el.panel.hidden && this.cfg.chat !== false)) {
       this.el.pick.hidden = true;
       return;
     }
@@ -262,6 +302,7 @@ class Overlay {
     this.el.pick.hidden = true;
     this.el.fab.hidden = !this.cfg.fab;
     this.showSettings(false);
+    if (this.tab) return; // the connection also carries MCP commands for this page
     this.unsubscribe?.();
     this.unsubscribe = null;
   }
@@ -475,7 +516,10 @@ class Overlay {
     this.el.log.textContent = '';
     this.live = null;
     this.unsubscribe = this.transport.subscribe({
-      onEvent: (ev) => this.handle(ev),
+      onEvent: (ev) => (this.lastEventAt = Date.now(), this.lastPingAt = Date.now(), this.handle(ev)),
+      onPing: () => (this.lastPingAt = Date.now()),
+      onCommand: (cmd) => this.command(cmd),
+      tab: this.tab,
       onReady: ({ busy }) => {
         this.caughtUp = true; // events from here on are new, not the replayed history
         this.setBusy(busy);
@@ -561,7 +605,78 @@ class Overlay {
     this.el.send.classList.toggle('stop', busy);
     this.el.panel.classList.toggle('busy', busy);
     this.el.fab.classList.toggle('busy', busy);
+    this.trackActivity(busy);
     if (this.history) this.showHistory(this.history);
+  }
+
+  // ---------- link to the server (MCP tools) ----------
+
+  startLink(capture) {
+    // The same tab keeps its id across reloads, so its console buffer on the server stays one history.
+    let tab = sessionStorage.getItem(STORE_TAB);
+    if (!tab) sessionStorage.setItem(STORE_TAB, (tab = Math.random().toString(36).slice(2, 12)));
+    const nav = Number(sessionStorage.getItem(STORE_NAV) ?? 0) + 1;
+    sessionStorage.setItem(STORE_NAV, String(nav));
+    this.tab = tab;
+    capture.nav = nav;
+    const post = (path, body) => this.api('POST', path, { tab, ...body }).catch(() => {}); // a missed report is not an error to show
+    this.post = post;
+    const hello = () => post('/page/hello', {
+      url: location.href, title: document.title, nav, origin: location.origin,
+      viewport: { width: innerWidth, height: innerHeight }, visible: document.visibilityState === 'visible',
+    });
+    hello();
+    addEventListener('focus', () => post('/page/focus'));
+    document.addEventListener('visibilitychange', () => document.visibilityState === 'visible' && post('/page/focus'));
+    setInterval(() => {
+      const entries = capture.drain();
+      if (entries.length) post('/page/log', { entries });
+    }, 1000);
+    this.connect();
+  }
+
+  reportSelection() {
+    if (!this.post) return;
+    const page = { url: location.pathname + location.search, title: document.title };
+    this.post('/page/selection', { element: this.target, page });
+  }
+
+  /** A read-only command from an MCP tool; the answer goes back over POST. */
+  async command({ id, cmd, args }) {
+    let out;
+    try {
+      out = { ok: true, data: runCommand(cmd, args ?? {}, this.cfg.srcAttr) };
+    } catch (err) {
+      out = { ok: false, error: err.message };
+    }
+    this.post('/page/result', { id, ...out });
+  }
+
+  // ---------- activity ----------
+
+  /** While the agent works: elapsed time, time since its last output, and whether the connection is alive. */
+  trackActivity(busy) {
+    clearInterval(this.activityTimer);
+    this.el.activity.hidden = !busy;
+    if (!busy) return;
+    this.busySince = Date.now();
+    this.lastTool = null;
+    this.lastEventAt = this.lastPingAt = Date.now();
+    this.activityTimer = setInterval(() => this.drawActivity(), 1000);
+    this.drawActivity();
+  }
+
+  drawActivity() {
+    const now = Date.now();
+    const lost = this.unsubscribe && now - this.lastPingAt > 2.5 * PING_MS;
+    const quiet = now - this.lastEventAt;
+    const parts = [`Working ${duration(now - this.busySince)}`];
+    parts.push(quiet < 3000 ? 'receiving output' : `no output for ${duration(quiet)}`);
+    if (this.lastTool) parts.push(`last: ${this.lastTool}`);
+    this.el.activity.textContent = lost
+      ? 'No sign of life from the dev server for a while: it may have restarted. Reload the page.'
+      : parts.join(' · ') + (quiet > 60000 ? ' (the model or a tool may just be slow; Stop ends it)' : '');
+    this.el.activity.classList.toggle('lost', !!lost);
   }
 
   // ---------- agent events ----------
@@ -608,6 +723,7 @@ class Overlay {
       case 'tool':
         this.live = null;
         this.line('tool', `${TOOL_ICONS[ev.name] ?? '•'} ${ev.name} ${ev.summary ?? ''}`);
+        this.lastTool = `${ev.name} ${ev.summary ?? ''}`.trim().slice(0, 60);
         break;
       case 'tool-error':
         this.line('tool error', ev.text);
@@ -713,6 +829,124 @@ function describe(el, srcAttr) {
     text: (el.innerText ?? el.textContent ?? '').replace(/\s+/g, ' ').trim().slice(0, 200) || undefined,
     html: cleanHtml(el.outerHTML, srcAttr).slice(0, 1500),
   };
+}
+
+const DEFAULT_STYLES = ['display', 'position', 'width', 'height', 'color', 'background-color', 'font-size', 'font-weight', 'margin', 'padding', 'overflow', 'visibility'];
+
+/** The commands MCP tools may run in the page: all of them only read. */
+function runCommand(cmd, args, srcAttr) {
+  if (cmd === 'info') {
+    const d = document.documentElement;
+    return {
+      url: location.href, title: document.title, readyState: document.readyState,
+      viewport: { width: innerWidth, height: innerHeight, devicePixelRatio },
+      scroll: { x: Math.round(scrollX), y: Math.round(scrollY) },
+      document: { width: d.scrollWidth, height: d.scrollHeight },
+      lang: d.lang || undefined, visible: document.visibilityState === 'visible',
+    };
+  }
+  if (cmd === 'query') {
+    let found;
+    try {
+      found = document.querySelectorAll(args.selector);
+    } catch {
+      throw new Error(`"${args.selector}" is not a valid CSS selector.`);
+    }
+    const styles = args.styles?.length ? args.styles : DEFAULT_STYLES;
+    return {
+      count: found.length,
+      elements: [...found].slice(0, args.limit ?? 3).map((el) => {
+        const cs = getComputedStyle(el);
+        const r = el.getBoundingClientRect();
+        return {
+          ...describe(el, srcAttr),
+          rect: { x: Math.round(r.x), y: Math.round(r.y), width: Math.round(r.width), height: Math.round(r.height) },
+          visible: r.width > 0 && r.height > 0 && cs.visibility !== 'hidden' && cs.display !== 'none',
+          styles: Object.fromEntries(styles.map((p) => [p, cs.getPropertyValue(p)])),
+        };
+      }),
+    };
+  }
+  throw new Error(`Unknown command ${cmd}.`);
+}
+
+const LEVELS = ['debug', 'log', 'info', 'warn', 'error'];
+
+/**
+ * Collects console output, uncaught errors, rejected promises and failed requests
+ * in a queue the overlay sends to the server. WebAI's own requests are left out.
+ */
+function installCapture(base) {
+  const queue = [];
+  const cap = {
+    nav: 0,
+    drain: () => queue.splice(0),
+    add(level, kind, text, stack) {
+      queue.push({ level, kind, text: String(text).slice(0, 4000), stack: stack && String(stack).slice(0, 4000), nav: cap.nav });
+      if (queue.length > 300) queue.shift();
+    },
+  };
+  for (const level of LEVELS) {
+    const orig = console[level];
+    console[level] = function (...args) {
+      try {
+        cap.add(level, 'console', args.map(formatArg).join(' '), args.find((a) => a instanceof Error)?.stack);
+      } catch {} // capturing must never break the page's own logging
+      return orig.apply(this, args);
+    };
+  }
+  addEventListener('error', (e) => {
+    if (e.target && e.target !== window) {
+      // A resource that failed to load (the error event doesn't bubble, so only the capture phase sees it).
+      const t = e.target;
+      cap.add('error', 'network', `Failed to load <${t.tagName?.toLowerCase()}> ${t.src || t.href || ''}`);
+    } else {
+      cap.add('error', 'error', `${e.message} (${e.filename}:${e.lineno}:${e.colno})`, e.error?.stack);
+    }
+  }, true);
+  addEventListener('unhandledrejection', (e) => cap.add('error', 'error', `Unhandled promise rejection: ${formatArg(e.reason)}`, e.reason?.stack));
+  const realFetch = window.fetch;
+  window.fetch = async function (input, init) {
+    const url = typeof input === 'string' ? input : input?.url ?? String(input);
+    const method = (init?.method ?? input?.method ?? 'GET').toUpperCase();
+    if (url.includes(base)) return realFetch.call(this, input, init);
+    try {
+      const res = await realFetch.call(this, input, init);
+      if (!res.ok) cap.add('error', 'network', `${method} ${url} → ${res.status} ${res.statusText}`.trim());
+      return res;
+    } catch (err) {
+      if (err?.name !== 'AbortError') cap.add('error', 'network', `${method} ${url} failed: ${err?.message ?? err}`);
+      throw err;
+    }
+  };
+  return cap;
+}
+
+function formatArg(a) {
+  if (typeof a === 'string') return a;
+  if (a instanceof Error) return a.stack || `${a.name}: ${a.message}`;
+  if (a instanceof Element) return openTag(a);
+  if (a && typeof a === 'object') {
+    const seen = new WeakSet();
+    try {
+      return JSON.stringify(a, (k, v) => {
+        if (typeof v === 'bigint') return `${v}n`;
+        if (v && typeof v === 'object') {
+          if (seen.has(v)) return '[circular]';
+          seen.add(v);
+        }
+        return v;
+      }).slice(0, 1000);
+    } catch {
+      return Object.prototype.toString.call(a);
+    }
+  }
+  return String(a);
+}
+
+function duration(ms) {
+  const s = Math.floor(ms / 1000);
+  return s < 60 ? `${s} s` : `${Math.floor(s / 60)} min ${s % 60} s`;
 }
 
 function findElement(info, srcAttr) {
@@ -855,6 +1089,8 @@ const STYLES = `
 }
 .fab:hover { background: #8d71ff; opacity: 1; }
 .fab.left { right: auto; left: 16px; }
+.activity { margin: 0 10px; color: #8f8fa8; font: 11.5px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; }
+.activity.lost { color: #ff7a7a; }
 .fab.busy { animation: pulse 1s infinite; }
 .gear { display: inline-flex; align-items: center; justify-content: center; padding: 3px 6px; }
 .gear svg { width: 18px; height: 18px; }

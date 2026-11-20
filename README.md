@@ -107,6 +107,11 @@ export default defineConfig({ plugins: [react(), webai()] });
 Only in `vite dev`. The overlay goes into every HTML page the dev server sends,
 SPA or server-rendered (SvelteKit). Vite's hot reload shows the changes.
 
+React: every element gets its exact `file:line:col` (`data-webai-src`, dev only), so the agent opens the right
+file instead of searching for the text. React 19 dropped `_debugSource`; WebAI reads the place the JSX transform
+passes to `jsxDEV` instead. Keep `webai()` after `react()` in `plugins`: plugin-react 4 puts a Fast Refresh header
+in front of every file, and WebAI corrects the line numbers for it (it warns when the order is wrong).
+
 ### Astro
 
 ```js
@@ -229,6 +234,37 @@ npm run editor       # http://localhost:4500/editor/
 - The overlay gets the harness through `cfg.transport` (`request` +
   `subscribe`); the default transport is HTTP + SSE to the dev server.
 - Service workers don't run in Firefox private windows; the editor says so.
+
+## MCP server: the browser for your own agent harness
+
+`webai mcp` is an [MCP](https://modelcontextprotocol.io) server (stdio, no dependencies) that gives the agent
+harness you already run (Claude Code, Codex, Cursor, …) what the overlay sees in the browser. It is read-only.
+
+```json
+{ "mcpServers": { "webai": { "command": "npx", "args": ["@jantcz/webai", "mcp"] } } }
+```
+
+Put that in the project's `.mcp.json` (or `claude mcp add webai -- npx @jantcz/webai mcp`). `--root <dir>` points at the
+project when the harness doesn't start in it. The dev server with webai has to be running, and a page open: the first
+page that loads writes `.webai/mcp.json` (address and a token, mode 0600) which `webai mcp` reads on every call.
+
+| Tool | What it gives |
+| --- | --- |
+| `webai_get_selection` | The element picked with Shift+click: source `file:line:col`, selector, text, HTML, enclosing components |
+| `webai_console` | `console.*`, uncaught errors, unhandled rejections and failed requests; filter by level, kind, age |
+| `webai_query_dom` | Live elements by CSS selector: count, text, HTML, box, visibility, computed styles |
+| `webai_page_info` | Open tabs (which one was used last) and the active one's URL, viewport, scroll |
+| `webai_history` | The file versions WebAI keeps |
+
+Notes:
+- The console is collected from the moment the overlay script loads; the last 500 entries per tab are kept, across reloads.
+  Requests are seen only when made with `fetch` (not XHR), and failed resources (`<img>`, `<script>`) by their load error.
+- Everything from the page is data from a site under development, and tool results say so. The tools can't run code or click.
+- In Docker the bridge holds the browser state: `webai mcp --bridge http://127.0.0.1:4400`.
+- `webai({ chat: false })` makes Shift+click only select the element (highlight stays, Esc clears it) instead of opening the chat: the
+  usual setting when you work through MCP. The panel stays behind the ✦ button.
+- `webai({ mcp: false })` switches it off: no file, and the endpoint refuses calls. The endpoint accepts only this machine, only
+  with the token, and never a request that carries `Origin` (a web page).
 
 ## Development in Docker
 

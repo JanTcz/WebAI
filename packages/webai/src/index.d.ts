@@ -156,6 +156,17 @@ export interface WebAiOptions {
   /** Show the floating button. Default `true`. */
   fab?: boolean;
   /**
+   * Open the chat panel when an element is picked. Default `true`. With `false` a pick only
+   * selects the element (highlight, Esc clears it) and reports it to the MCP tools: for working
+   * from your own agent harness through `webai mcp`. The panel is still there behind the button.
+   */
+  chat?: boolean;
+  /**
+   * Let a local agent harness read the browser through MCP (`npx webai mcp`): the picked
+   * element, console, live DOM. Default `true`; `false` also removes the endpoint.
+   */
+  mcp?: boolean;
+  /**
    * Allow the overlay from other machines too (`--host`). Default `false`:
    * the endpoints accept only loopback and Host `localhost`/`127.0.0.1`.
    * With `true` the command for "Other" can't be changed in the panel.

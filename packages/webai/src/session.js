@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { History } from './history.js';
+import { PageHub } from './pages.js';
 import { buildPrompt } from './prompt.js';
 
 const MAX_EVENTS = 1000;
@@ -31,8 +32,9 @@ saying what you changed and where.`;
 export { buildPrompt };
 
 export class AgentSession {
-  constructor({ root, agents, stateDir, logger }) {
+  constructor({ root, agents, stateDir, logger, onOrigin }) {
     this.root = root;
+    this.pages = new PageHub({ onOrigin }); // the browser's side: selection, console, commands
     this.agents = agents; // { name: adapter }
     this.logger = logger;
     this.dir = path.resolve(root, stateDir);
@@ -438,6 +440,7 @@ export class AgentSession {
     // Synchronous: also called from process.on('exit'), where async work never finishes.
     if (this.proc) killGroup(this.proc, 'SIGTERM', { sync: true });
     this.proc = null;
+    this.pages.dispose();
     process.off('exit', this.onExit);
   }
 
