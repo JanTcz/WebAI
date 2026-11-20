@@ -107,6 +107,11 @@ export default defineConfig({ plugins: [react(), webai()] });
 Only in `vite dev`. The overlay goes into every HTML page the dev server sends,
 SPA or server-rendered (SvelteKit). Vite's hot reload shows the changes.
 
+React: every element gets its exact `file:line:col` (`data-webai-src`, dev only), so the agent opens the right
+file instead of searching for the text. React 19 dropped `_debugSource`; WebAI reads the place the JSX transform
+passes to `jsxDEV` instead. Keep `webai()` after `react()` in `plugins`: plugin-react 4 puts a Fast Refresh header
+in front of every file, and WebAI corrects the line numbers for it (it warns when the order is wrong).
+
 ### Astro
 
 ```js
