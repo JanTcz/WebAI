@@ -101,6 +101,7 @@ class Overlay {
       if (saved) this.setTarget(saved, findElement(saved, cfg.srcAttr));
     }
     if (open) this.open();
+    this.watchTarget();
     // No selection came back from the last page load: tell the server (a stale one would otherwise stay).
     if (capture && !this.target) this.reportSelection();
   }
@@ -242,6 +243,26 @@ class Overlay {
     if (this.cfg.chat === false) return; // select only: the highlight stays, MCP tools can read it
     this.open();
     this.el.input.focus();
+  }
+
+  /**
+   * The selection survives a reload, but the page may draw the element later (an app that renders after its data
+   * arrives), replace it, or change it (hot reload): after the page settles, look for it again when it is missing and
+   * describe it again when it changed, so the server and the agent are told what is there now.
+   */
+  watchTarget() {
+    let timer = null;
+    new MutationObserver(() => {
+      if (timer || !this.target) return;
+      timer = setTimeout(() => {
+        timer = null;
+        if (!this.target) return;
+        const el = this.targetEl?.isConnected ? this.targetEl : findElement(this.target, this.cfg.srcAttr);
+        if (!el) return;
+        const info = describe(el, this.cfg.srcAttr);
+        if (el !== this.targetEl || JSON.stringify(info) !== JSON.stringify(this.target)) this.setTarget(info, el);
+      }, 300);
+    }).observe(document.documentElement, { childList: true, subtree: true, characterData: true, attributes: true });
   }
 
   setTarget(info, el = null) {
