@@ -11,6 +11,7 @@
     "docker": "docker compose up",
     "test": "npm run coverage && node --test editor/*.test.js editor/proxy/*.test.js && npm --prefix examples/astro test",
     "coverage": "node --test --experimental-test-coverage --test-coverage-include='packages/webai/src/**' --test-coverage-include='packages/webai/bin/**' --test-coverage-exclude='packages/webai/src/client/**' --test-coverage-exclude='packages/webai/bin/webai.js' --test-coverage-exclude='packages/webai/bin/webai-bridge.js' --test-coverage-lines=100 --test-coverage-branches=100 --test-coverage-functions=100 packages/webai/test/*.test.js",
-    "editor:proxy": "node editor/proxy/serve-local.mjs"
+    "editor:proxy": "node editor/proxy/serve-local.mjs",
+    "pack:local": "node scripts/pack-local.mjs"
   }
 }

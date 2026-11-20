@@ -1,6 +1,8 @@
 import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
+import { callTool } from './mcp/tools.js';
+import { PageHub } from './pages.js';
 
 export const BASE = '/__webai';
 export const BRIDGE_TOKEN_FILE = 'bridge-token';
@@ -22,11 +24,13 @@ const LOOPBACK = new Set(['localhost', '127.0.0.1', '[::1]']);
  * `trustProxy`: requests come through a reverse proxy on this machine (Next.js
  * rewrites), so the browser's address and host are in X-Forwarded-For/-Host.
  */
-export function createMiddleware(session, token, { allowRemote = false, trustProxy = false } = {}) {
+export function createMiddleware(session, token, { allowRemote = false, trustProxy = false, mcpToken = null } = {}) {
   const api = createApi(session);
   return (req, res, next) => {
     const route = routeOf(req);
     if (route == null) return next();
+    // MCP tools: a local process (not a page) with its own token.
+    if (route.startsWith('/mcp/')) return toolAllowed(req, mcpToken) ? api(req, res, route) : json(res, 403, { error: 'forbidden' });
     if (!browserAllowed(req, token, { allowRemote, trustProxy })) return json(res, 403, { error: 'forbidden' });
     return api(req, res, route);
   };
@@ -94,7 +98,7 @@ function createApi(session) {
       if (req.method === 'GET' && route === '/events') {
         // After a drop EventSource sends Last-Event-ID, the `since` query stays the original.
         const since = Math.max(Number(url.searchParams.get('since') ?? 0), Number(req.headers['last-event-id'] ?? 0));
-        return events(req, res, session, since);
+        return events(req, res, session, since, url.searchParams.get('tab'));
       }
       if (req.method === 'POST' && route === '/send') {
         const body = await readJson(req);
@@ -111,6 +115,22 @@ function createApi(session) {
         if (typeof id !== 'string' || typeof allow !== 'boolean') return json(res, 400, { error: 'id is the request, allow is true or false.' });
         session.answerPermission(id, allow);
         return json(res, 200, { ok: true });
+      }
+      // What the overlay reports about its page, and its answers to MCP tool commands (see pages.js).
+      if (req.method === 'POST' && route.startsWith('/page/')) {
+        const body = await readJson(req);
+        const pages = session.pages;
+        if (route === '/page/hello') pages.hello(body);
+        else if (route === '/page/log') pages.log(body.tab, body.entries);
+        else if (route === '/page/selection') pages.selection(body.tab, body.element, body.page);
+        else if (route === '/page/focus') pages.focus(body.tab);
+        else if (route === '/page/result') return json(res, 200, { ok: pages.result(body.tab, body) });
+        else return json(res, 404, { error: 'not found' });
+        return json(res, 200, { ok: true });
+      }
+      if (req.method === 'POST' && route === '/mcp/call') {
+        const { tool, args } = await readJson(req);
+        return json(res, 200, { result: await callTool(session, tool, args) });
       }
       if (req.method === 'POST' && route === '/stop') return json(res, 200, { stopped: session.stop() });
       if (req.method === 'GET' && route === '/history') return json(res, 200, session.history.list());
@@ -133,6 +153,13 @@ function createApi(session) {
 export function routeOf(req) {
   const { pathname } = new URL(req.url, 'http://localhost');
   return pathname.startsWith(BASE + '/') ? pathname.slice(BASE.length) : null;
+}
+
+/** A tool call: this machine only, token, and not from a page (browsers always send Origin or Sec-Fetch-Site). */
+function toolAllowed(req, token) {
+  return !!token && isLoopback(req.socket.remoteAddress)
+    && !req.headers.origin && !req.headers['sec-fetch-site']
+    && req.headers['x-webai-token'] === token;
 }
 
 function browserAllowed(req, token, opts) {
@@ -176,7 +203,7 @@ function sameOrigin(req, host) {
   }
 }
 
-function events(req, res, session, since) {
+function events(req, res, session, since, tab) {
   res.writeHead(200, {
     'Content-Type': 'text/event-stream',
     // no-transform: proxies in between (Next.js rewrites) must not gzip and so buffer the stream.
@@ -188,11 +215,16 @@ function events(req, res, session, since) {
   for (const ev of session.events) if (ev.seq > since) write(ev);
   res.write(`event: ready\ndata: ${JSON.stringify({ busy: session.busy })}\n\n`);
   const unsubscribe = session.subscribe(write);
+  // The same stream carries the commands MCP tools send to this page, so a tab holds one connection.
+  const detach = PageHub.validId(tab)
+    ? session.pages.attach(tab, (cmd) => res.write(`event: command\ndata: ${JSON.stringify(cmd)}\n\n`))
+    : null;
   // The comment keeps proxies awake; the named event lets the panel see the connection is alive.
   const ping = setInterval(() => res.write(`: ping\nevent: ping\ndata: ${JSON.stringify({ busy: session.busy })}\n\n`), PING_MS);
   req.on('close', () => {
     clearInterval(ping);
     unsubscribe();
+    detach?.();
   });
 }
 

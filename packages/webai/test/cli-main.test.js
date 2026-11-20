@@ -246,3 +246,20 @@ test('defaults: current folder as root and the default ports (a taken port is fi
     process.chdir(cwd);
   }
 });
+
+test('mcp: serves the tools on the given streams and does not touch stdout otherwise', async () => {
+  const { PassThrough } = await import('node:stream');
+  const input = new PassThrough();
+  const output = new PassThrough();
+  const text = [];
+  output.on('data', (c) => text.push(String(c)));
+  const running = await main(['mcp', '--root', tmp(), '--bridge', 'http://127.0.0.1:1'], { input, output, logger: quiet().logger });
+  assert.equal(running.url, null);
+  input.write('{"jsonrpc":"2.0","id":1,"method":"tools/list"}\n');
+  await new Promise((r) => setTimeout(r, 30));
+  running.close();
+  await running.done;
+  assert.equal(text.join('').trim().split('\n').length, 1);
+  assert.match(text.join(''), /webai_get_selection/);
+  assert.match(HELP, /webai mcp/);
+});

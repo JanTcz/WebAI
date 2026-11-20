@@ -156,6 +156,11 @@ export interface WebAiOptions {
   /** Show the floating button. Default `true`. */
   fab?: boolean;
   /**
+   * Let a local agent harness read the browser through MCP (`npx webai mcp`): the picked
+   * element, console, live DOM. Default `true`; `false` also removes the endpoint.
+   */
+  mcp?: boolean;
+  /**
    * Allow the overlay from other machines too (`--host`). Default `false`:
    * the endpoints accept only loopback and Host `localhost`/`127.0.0.1`.
    * With `true` the command for "Other" can't be changed in the panel.

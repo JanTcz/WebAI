@@ -13,6 +13,8 @@ const STORE_GEOMETRY = 'webai:geometry';
 const MIN_W = 300;
 const MIN_H = 320;
 const STORE_TRIGGERS = 'webai:triggers';
+const STORE_TAB = 'webai:tab';
+const STORE_NAV = 'webai:nav';
 
 const TRIGGERS = [
   ['shift-click', 'Shift + click'],
@@ -27,7 +29,9 @@ const TOOL_ICONS = { Edit: '✎', MultiEdit: '✎', Write: '✚', Read: '◉', B
 export function start(cfg) {
   if (window.__webai) return;
   window.__webai = true;
-  const run = () => new Overlay(cfg);
+  // Right away, not after DOMContentLoaded: the console of the page's own start-up is what matters most.
+  const capture = cfg.transport ? null : installCapture(cfg.base);
+  const run = () => new Overlay(cfg, capture);
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', run, { once: true });
   else run();
 }
@@ -35,7 +39,7 @@ export function start(cfg) {
 /**
  * Transport to the dev server. Interface:
  * - `request(method, path, body)` → data; failures throw an Error with a readable message
- * - `subscribe({ onEvent, onReady, onLost, onPing })` → unsubscribe function (`onPing` is optional); first
+ * - `subscribe({ onEvent, onReady, onLost, onPing, onCommand, tab })` → unsubscribe function (`onPing`, `onCommand`, `tab` are optional); first
  *   replays the whole history, then `onReady({ busy })`, then live events
  */
 export function httpTransport(cfg) {
@@ -57,8 +61,9 @@ export function httpTransport(cfg) {
       return data;
     },
 
-    subscribe({ onEvent, onReady, onLost, onPing }) {
-      const es = new EventSource(`${cfg.base}/events?token=${cfg.token}`);
+    subscribe({ onEvent, onReady, onLost, onPing, onCommand, tab }) {
+      const es = new EventSource(`${cfg.base}/events?token=${cfg.token}${tab ? `&tab=${encodeURIComponent(tab)}` : ''}`);
+      es.addEventListener('command', (m) => onCommand?.(JSON.parse(m.data)));
       es.onmessage = (m) => onEvent(JSON.parse(m.data));
       es.addEventListener('ready', (m) => onReady(JSON.parse(m.data)));
       es.addEventListener('ping', () => onPing?.());
@@ -71,7 +76,7 @@ export function httpTransport(cfg) {
 }
 
 class Overlay {
-  constructor(cfg) {
+  constructor(cfg, capture = null) {
     this.cfg = cfg;
     this.transport = cfg.transport ?? httpTransport(cfg);
     this.target = null;
@@ -86,11 +91,16 @@ class Overlay {
       if (this.el.input.value) sessionStorage.setItem(STORE_DRAFT, this.el.input.value);
       else sessionStorage.removeItem(STORE_DRAFT);
     });
+    // Over HTTP the page also reports to the server (for MCP tools), so the connection is always on.
+    // Before the panel opens: it would otherwise connect without the tab.
+    if (capture) this.startLink(capture);
     if (sessionStorage.getItem(STORE_OPEN) === '1') {
       const saved = readJson(sessionStorage.getItem(STORE_TARGET));
       if (saved) this.setTarget(saved, findElement(saved, cfg.srcAttr));
       this.open();
     }
+    // No selection came back from the last page load: tell the server (a stale one would otherwise stay).
+    if (capture && !this.target) this.reportSelection();
   }
 
   // ---------- DOM ----------
@@ -238,6 +248,7 @@ class Overlay {
     this.el.target.hidden = !info;
     if (info) this.el.targetCode.textContent = `<${info.tag.match(/^<?([\w-]+)/)?.[1] ?? '?'}>  ${info.src ?? info.selector}`;
     this.drawPick();
+    this.reportSelection();
   }
 
   drawPick() {
@@ -266,6 +277,7 @@ class Overlay {
     this.el.pick.hidden = true;
     this.el.fab.hidden = !this.cfg.fab;
     this.showSettings(false);
+    if (this.tab) return; // the connection also carries MCP commands for this page
     this.unsubscribe?.();
     this.unsubscribe = null;
   }
@@ -481,6 +493,8 @@ class Overlay {
     this.unsubscribe = this.transport.subscribe({
       onEvent: (ev) => (this.lastEventAt = Date.now(), this.lastPingAt = Date.now(), this.handle(ev)),
       onPing: () => (this.lastPingAt = Date.now()),
+      onCommand: (cmd) => this.command(cmd),
+      tab: this.tab,
       onReady: ({ busy }) => {
         this.caughtUp = true; // events from here on are new, not the replayed history
         this.setBusy(busy);
@@ -568,6 +582,49 @@ class Overlay {
     this.el.fab.classList.toggle('busy', busy);
     this.trackActivity(busy);
     if (this.history) this.showHistory(this.history);
+  }
+
+  // ---------- link to the server (MCP tools) ----------
+
+  startLink(capture) {
+    // The same tab keeps its id across reloads, so its console buffer on the server stays one history.
+    let tab = sessionStorage.getItem(STORE_TAB);
+    if (!tab) sessionStorage.setItem(STORE_TAB, (tab = Math.random().toString(36).slice(2, 12)));
+    const nav = Number(sessionStorage.getItem(STORE_NAV) ?? 0) + 1;
+    sessionStorage.setItem(STORE_NAV, String(nav));
+    this.tab = tab;
+    capture.nav = nav;
+    const post = (path, body) => this.api('POST', path, { tab, ...body }).catch(() => {}); // a missed report is not an error to show
+    this.post = post;
+    const hello = () => post('/page/hello', {
+      url: location.href, title: document.title, nav, origin: location.origin,
+      viewport: { width: innerWidth, height: innerHeight }, visible: document.visibilityState === 'visible',
+    });
+    hello();
+    addEventListener('focus', () => post('/page/focus'));
+    document.addEventListener('visibilitychange', () => document.visibilityState === 'visible' && post('/page/focus'));
+    setInterval(() => {
+      const entries = capture.drain();
+      if (entries.length) post('/page/log', { entries });
+    }, 1000);
+    this.connect();
+  }
+
+  reportSelection() {
+    if (!this.post) return;
+    const page = { url: location.pathname + location.search, title: document.title };
+    this.post('/page/selection', { element: this.target, page });
+  }
+
+  /** A read-only command from an MCP tool; the answer goes back over POST. */
+  async command({ id, cmd, args }) {
+    let out;
+    try {
+      out = { ok: true, data: runCommand(cmd, args ?? {}, this.cfg.srcAttr) };
+    } catch (err) {
+      out = { ok: false, error: err.message };
+    }
+    this.post('/page/result', { id, ...out });
   }
 
   // ---------- activity ----------
@@ -747,6 +804,119 @@ function describe(el, srcAttr) {
     text: (el.innerText ?? el.textContent ?? '').replace(/\s+/g, ' ').trim().slice(0, 200) || undefined,
     html: cleanHtml(el.outerHTML, srcAttr).slice(0, 1500),
   };
+}
+
+const DEFAULT_STYLES = ['display', 'position', 'width', 'height', 'color', 'background-color', 'font-size', 'font-weight', 'margin', 'padding', 'overflow', 'visibility'];
+
+/** The commands MCP tools may run in the page: all of them only read. */
+function runCommand(cmd, args, srcAttr) {
+  if (cmd === 'info') {
+    const d = document.documentElement;
+    return {
+      url: location.href, title: document.title, readyState: document.readyState,
+      viewport: { width: innerWidth, height: innerHeight, devicePixelRatio },
+      scroll: { x: Math.round(scrollX), y: Math.round(scrollY) },
+      document: { width: d.scrollWidth, height: d.scrollHeight },
+      lang: d.lang || undefined, visible: document.visibilityState === 'visible',
+    };
+  }
+  if (cmd === 'query') {
+    let found;
+    try {
+      found = document.querySelectorAll(args.selector);
+    } catch {
+      throw new Error(`"${args.selector}" is not a valid CSS selector.`);
+    }
+    const styles = args.styles?.length ? args.styles : DEFAULT_STYLES;
+    return {
+      count: found.length,
+      elements: [...found].slice(0, args.limit ?? 3).map((el) => {
+        const cs = getComputedStyle(el);
+        const r = el.getBoundingClientRect();
+        return {
+          ...describe(el, srcAttr),
+          rect: { x: Math.round(r.x), y: Math.round(r.y), width: Math.round(r.width), height: Math.round(r.height) },
+          visible: r.width > 0 && r.height > 0 && cs.visibility !== 'hidden' && cs.display !== 'none',
+          styles: Object.fromEntries(styles.map((p) => [p, cs.getPropertyValue(p)])),
+        };
+      }),
+    };
+  }
+  throw new Error(`Unknown command ${cmd}.`);
+}
+
+const LEVELS = ['debug', 'log', 'info', 'warn', 'error'];
+
+/**
+ * Collects console output, uncaught errors, rejected promises and failed requests
+ * in a queue the overlay sends to the server. WebAI's own requests are left out.
+ */
+function installCapture(base) {
+  const queue = [];
+  const cap = {
+    nav: 0,
+    drain: () => queue.splice(0),
+    add(level, kind, text, stack) {
+      queue.push({ level, kind, text: String(text).slice(0, 4000), stack: stack && String(stack).slice(0, 4000), nav: cap.nav });
+      if (queue.length > 300) queue.shift();
+    },
+  };
+  for (const level of LEVELS) {
+    const orig = console[level];
+    console[level] = function (...args) {
+      try {
+        cap.add(level, 'console', args.map(formatArg).join(' '), args.find((a) => a instanceof Error)?.stack);
+      } catch {} // capturing must never break the page's own logging
+      return orig.apply(this, args);
+    };
+  }
+  addEventListener('error', (e) => {
+    if (e.target && e.target !== window) {
+      // A resource that failed to load (the error event doesn't bubble, so only the capture phase sees it).
+      const t = e.target;
+      cap.add('error', 'network', `Failed to load <${t.tagName?.toLowerCase()}> ${t.src || t.href || ''}`);
+    } else {
+      cap.add('error', 'error', `${e.message} (${e.filename}:${e.lineno}:${e.colno})`, e.error?.stack);
+    }
+  }, true);
+  addEventListener('unhandledrejection', (e) => cap.add('error', 'error', `Unhandled promise rejection: ${formatArg(e.reason)}`, e.reason?.stack));
+  const realFetch = window.fetch;
+  window.fetch = async function (input, init) {
+    const url = typeof input === 'string' ? input : input?.url ?? String(input);
+    const method = (init?.method ?? input?.method ?? 'GET').toUpperCase();
+    if (url.includes(base)) return realFetch.call(this, input, init);
+    try {
+      const res = await realFetch.call(this, input, init);
+      if (!res.ok) cap.add('error', 'network', `${method} ${url} → ${res.status} ${res.statusText}`.trim());
+      return res;
+    } catch (err) {
+      if (err?.name !== 'AbortError') cap.add('error', 'network', `${method} ${url} failed: ${err?.message ?? err}`);
+      throw err;
+    }
+  };
+  return cap;
+}
+
+function formatArg(a) {
+  if (typeof a === 'string') return a;
+  if (a instanceof Error) return a.stack || `${a.name}: ${a.message}`;
+  if (a instanceof Element) return openTag(a);
+  if (a && typeof a === 'object') {
+    const seen = new WeakSet();
+    try {
+      return JSON.stringify(a, (k, v) => {
+        if (typeof v === 'bigint') return `${v}n`;
+        if (v && typeof v === 'object') {
+          if (seen.has(v)) return '[circular]';
+          seen.add(v);
+        }
+        return v;
+      }).slice(0, 1000);
+    } catch {
+      return Object.prototype.toString.call(a);
+    }
+  }
+  return String(a);
 }
 
 function duration(ms) {

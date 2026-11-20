@@ -6,6 +6,7 @@ import { parseArgs } from 'node:util';
 import { DEFAULT_PORT as BRIDGE_PORT, startBridge } from './bridge.js';
 import { CONFIG_FILE, consoleLogger, loadConfig } from './config.js';
 import { createWebai } from './core.js';
+import { serveMcp } from './mcp/stdio.js';
 import { proxyTo } from './proxy.js';
 import { staticFiles } from './static.js';
 
@@ -16,11 +17,14 @@ export const HELP = `webai: click an element on your site, tell an AI agent what
   webai [dir]              a folder of static files (default: the current one)
   webai --target <url>     a dev server that is already running, e.g. http://localhost:3000
   webai bridge             agents on this machine for a dev server in a container
+  webai mcp                MCP server (stdio) that gives an agent harness the picked element,
+                           console and DOM of the open page; add it to .mcp.json
 
 Options:
   --port <n>         default ${DEFAULT_PORT} (bridge: ${BRIDGE_PORT})
   --host <addr>      default 127.0.0.1
   --root <dir>       the project the agent edits (default: the folder, or the current one with --target)
+  --bridge <url>     mcp: use the bridge on the host instead of the dev server (Docker), e.g. http://127.0.0.1:4400
   --config <file>    options (default export), default <root>/${CONFIG_FILE}
   --allow-remote     let other machines use the overlay (in a container: the Docker network)
   --open             open the browser
@@ -30,7 +34,7 @@ Agents: Claude Code, Codex, Gemini CLI, OpenCode, Pi when installed, and the
 built-in agent (free models, no key). Switch between them in the panel (⚙).`;
 
 /** Runs the CLI; resolves to `{ url, close }` once it listens, or `null` after --help. */
-export async function main(argv = process.argv.slice(2), { logger = consoleLogger, print = console.log } = {}) {
+export async function main(argv = process.argv.slice(2), { logger = consoleLogger, print = console.log, input = process.stdin, output = process.stdout } = {}) {
   const { values, positionals } = parseArgs({
     args: argv,
     allowPositionals: true,
@@ -39,6 +43,7 @@ export async function main(argv = process.argv.slice(2), { logger = consoleLogge
       port: { type: 'string' },
       host: { type: 'string', default: '127.0.0.1' },
       root: { type: 'string' },
+      bridge: { type: 'string' },
       config: { type: 'string' },
       'allow-remote': { type: 'boolean', default: false },
       open: { type: 'boolean', default: false },
@@ -48,6 +53,12 @@ export async function main(argv = process.argv.slice(2), { logger = consoleLogge
   if (values.help) {
     print(HELP);
     return null;
+  }
+
+  if (positionals[0] === 'mcp') {
+    // stdout is the protocol, so the logger (and everything else) stays off it.
+    const { close, done } = serveMcp({ root: path.resolve(values.root ?? '.'), bridge: values.bridge, input, output });
+    return { url: null, close, done };
   }
 
   if (positionals[0] === 'bridge') {
