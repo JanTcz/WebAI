@@ -43,6 +43,7 @@ test('core: serves client.js and boot.js, API behind the token, the rest goes to
     assert.ok(boot.body.includes(core.token) && boot.body.includes("/__webai/client.js"));
     assert.deepEqual(core.client.triggers, ['shift-click']);
     assert.equal(core.client.fab, true);
+    assert.equal(core.client.chat, true);
     assert.equal(core.client.reload, false);
 
     assert.equal((await get(s.port, '/__webai/boot.js', { host: 'evil.example' })).status, 403);
@@ -58,10 +59,10 @@ test('core: serves client.js and boot.js, API behind the token, the rest goes to
 });
 
 test('core: boot.js honours trustProxy and options end up in the client config', async () => {
-  const core = createWebai({ root: tmp(), trustProxy: true, triggers: ['click'], fab: false, reload: true, stateDir: '.st', logger: quiet });
+  const core = createWebai({ root: tmp(), trustProxy: true, triggers: ['click'], fab: false, chat: false, reload: true, stateDir: '.st', logger: quiet });
   const s = await listen((req, res) => core.middleware(req, res, () => res.end()));
   try {
-    assert.deepEqual([core.client.triggers, core.client.fab, core.client.reload], [['click'], false, true]);
+    assert.deepEqual([core.client.triggers, core.client.fab, core.client.reload, core.client.chat], [['click'], false, true, false]);
     const r = await get(s.port, '/__webai/boot.js', { 'x-forwarded-host': 'localhost:3000', 'x-forwarded-for': '127.0.0.1' });
     assert.equal(r.status, 200);
   } finally {

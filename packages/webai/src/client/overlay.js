@@ -94,11 +94,13 @@ class Overlay {
     // Over HTTP the page also reports to the server (for MCP tools), so the connection is always on.
     // Before the panel opens: it would otherwise connect without the tab.
     if (capture) this.startLink(capture);
-    if (sessionStorage.getItem(STORE_OPEN) === '1') {
+    const open = sessionStorage.getItem(STORE_OPEN) === '1';
+    // Without the chat there is no panel to remember the selection by: it is restored on its own.
+    if (open || cfg.chat === false) {
       const saved = readJson(sessionStorage.getItem(STORE_TARGET));
       if (saved) this.setTarget(saved, findElement(saved, cfg.srcAttr));
-      this.open();
     }
+    if (open) this.open();
     // No selection came back from the last page load: tell the server (a stale one would otherwise stay).
     if (capture && !this.target) this.reportSelection();
   }
@@ -212,6 +214,7 @@ class Overlay {
     }, true);
     addEventListener('keydown', (e) => {
       if (e.key === 'Escape' && !this.el.panel.hidden) this.close();
+      else if (e.key === 'Escape' && this.cfg.chat === false && this.target) this.setTarget(null); // clears the selection
     });
   }
 
@@ -236,6 +239,7 @@ class Overlay {
     this.hideHover();
     getSelection()?.removeAllRanges(); // Shift+click extends the text selection
     this.setTarget(describe(el, this.cfg.srcAttr), el);
+    if (this.cfg.chat === false) return; // select only: the highlight stays, MCP tools can read it
     this.open();
     this.el.input.focus();
   }
@@ -253,7 +257,7 @@ class Overlay {
 
   drawPick() {
     const el = this.targetEl;
-    if (!el || !el.isConnected || this.el.panel.hidden) {
+    if (!el || !el.isConnected || (this.el.panel.hidden && this.cfg.chat !== false)) {
       this.el.pick.hidden = true;
       return;
     }

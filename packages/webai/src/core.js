@@ -39,6 +39,7 @@ export function createWebai(options = {}) {
     srcAttr: SRC_ATTR,
     triggers: options.triggers ?? ['shift-click'],
     fab: options.fab ?? true,
+    chat: options.chat ?? true,
     reload: options.reload ?? false,
   };
 

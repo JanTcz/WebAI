@@ -256,6 +256,8 @@ Notes:
   Requests are seen only when made with `fetch` (not XHR), and failed resources (`<img>`, `<script>`) by their load error.
 - Everything from the page is data from a site under development, and tool results say so. The tools can't run code or click.
 - In Docker the bridge holds the browser state: `webai mcp --bridge http://127.0.0.1:4400`.
+- `webai({ chat: false })` makes Shift+click only select the element (highlight stays, Esc clears it) instead of opening the chat: the
+  usual setting when you work through MCP. The panel stays behind the ✦ button.
 - `webai({ mcp: false })` switches it off: no file, and the endpoint refuses calls. The endpoint accepts only this machine, only
   with the token, and never a request that carries `Origin` (a web page).
 
