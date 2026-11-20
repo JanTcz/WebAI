@@ -30,6 +30,18 @@ export function removeEndpoint(dir, token) {
   } catch {}
 }
 
+/** In a monorepo the dev server runs in a subfolder (`web/`): the newest endpoint file one level down. */
+function findBelow(root, stateDir) {
+  let best = null;
+  for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
+    if (!entry.isDirectory() || entry.name.startsWith('.') || entry.name === 'node_modules') continue;
+    const file = path.join(root, entry.name, stateDir, MCP_ENDPOINT_FILE);
+    const mtime = fs.statSync(file, { throwIfNoEntry: false })?.mtimeMs;
+    if (mtime != null && (!best || mtime > best.mtime)) best = { file, mtime };
+  }
+  return best?.file;
+}
+
 /** `{ url, token }` of the running instance; throws an Error saying what to start when there is none. */
 export function readEndpoint({ root, stateDir = '.webai', bridge }) {
   const dir = path.resolve(root, stateDir);
@@ -41,7 +53,8 @@ export function readEndpoint({ root, stateDir = '.webai', bridge }) {
     }
   }
   try {
-    const { url, token } = JSON.parse(fs.readFileSync(path.join(dir, MCP_ENDPOINT_FILE), 'utf8'));
+    const own = path.join(dir, MCP_ENDPOINT_FILE);
+    const { url, token } = JSON.parse(fs.readFileSync(fs.existsSync(own) ? own : findBelow(path.resolve(root), stateDir), 'utf8'));
     return { url, token };
   } catch {
     throw new Error(

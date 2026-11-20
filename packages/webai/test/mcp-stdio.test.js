@@ -31,6 +31,28 @@ test('endpoint: write is private to the owner, remove only takes our own file, r
   fs.rmSync(root, { recursive: true });
 });
 
+test('endpoint: in a monorepo the newest dev server one level down is found, the root\'s own file wins', () => {
+  const root = tmp();
+  const at = (sub, token, age = 0) => {
+    writeEndpoint(path.join(root, sub, '.webai'), { url: 'http://127.0.0.1:1', token });
+    const t = new Date(Date.now() - age);
+    fs.utimesSync(path.join(root, sub, '.webai', MCP_ENDPOINT_FILE), t, t);
+  };
+  fs.mkdirSync(path.join(root, 'node_modules', 'x', '.webai'), { recursive: true });
+  fs.mkdirSync(path.join(root, '.hidden', '.webai'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'a-file'), '');
+  fs.mkdirSync(path.join(root, 'empty'));
+  assert.throws(() => readEndpoint({ root }), /No running WebAI found/);
+  at('old', 'OLD', 60000);
+  at('web', 'WEB');
+  assert.equal(readEndpoint({ root }).token, 'WEB');
+  at('older', 'OLDER', 120000); // older than the best so far: does not replace it
+  assert.equal(readEndpoint({ root }).token, 'WEB');
+  writeEndpoint(path.join(root, '.webai'), { url: 'http://127.0.0.1:1', token: 'ROOT' });
+  assert.equal(readEndpoint({ root }).token, 'ROOT');
+  fs.rmSync(root, { recursive: true });
+});
+
 test('endpoint: a bridge is addressed explicitly, its token comes from the state folder', () => {
   const root = tmp();
   assert.throws(() => readEndpoint({ root, bridge: 'http://127.0.0.1:4400' }), /No bridge token.*npx webai bridge/s);
